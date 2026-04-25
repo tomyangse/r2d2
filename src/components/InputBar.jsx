@@ -126,7 +126,7 @@ export default function InputBar() {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={imageData ? "添加说明（可选）..." : "✨ 说点什么，然后不管了..."}
+          placeholder={imageData ? "添加说明（可选）..." : "说一句，我来安排…"}
           rows={1}
           disabled={isProcessing}
           aria-label="AI input"

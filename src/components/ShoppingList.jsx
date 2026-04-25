@@ -1,5 +1,26 @@
-import { Check, Trash2, ShoppingBag } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Check, Trash2, ShoppingBag, MoreVertical, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
+
+// Category emoji map for frequently bought items
+const CATEGORY_ICONS = {
+  '乳制品': '🥛',
+  '蛋类': '🥚',
+  '水果': '🍎',
+  '蔬菜': '🥬',
+  '肉类': '🥩',
+  '面包': '🍞',
+  '家用品': '🧴',
+  '饮料': '🥤',
+};
+
+function getCategoryIcon(category) {
+  if (!category) return '📦';
+  for (const [key, emoji] of Object.entries(CATEGORY_ICONS)) {
+    if (category.includes(key)) return emoji;
+  }
+  return '📦';
+}
 
 function ShoppingItem({ item }) {
   const { toggleShoppingItem, deleteShoppingItem } = useStore();
@@ -22,22 +43,96 @@ function ShoppingItem({ item }) {
         <span className="shopping-item__category">{item.category}</span>
       )}
       <button
-        className="action-btn action-btn--danger shopping-item__delete"
+        className="three-dot-btn"
         onClick={() => deleteShoppingItem(item.id)}
         aria-label={`Delete ${item.name}`}
       >
-        <Trash2 size={14} />
+        <MoreVertical size={16} />
       </button>
     </div>
   );
 }
 
+function AISuggestionCard({ onDismiss }) {
+  return (
+    <div className="ai-suggestion-card">
+      <button className="ai-suggestion-card__close" onClick={onDismiss} aria-label="Dismiss">
+        <X size={14} />
+      </button>
+      <div className="ai-suggestion-card__label">
+        <span>✨</span>
+        <span>建议按分类整理购物清单</span>
+      </div>
+      <div className="ai-suggestion-card__text">
+        分类后更清晰，采购更高效
+      </div>
+      <div className="ai-suggestion-card__decoration">🧺</div>
+    </div>
+  );
+}
+
+function FrequentlyBoughtSection({ items, onAdd }) {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className="freq-bought-section">
+      <div className="freq-bought-section__title">常买推荐</div>
+      <div className="freq-bought-section__list">
+        {items.map((item) => (
+          <button
+            key={item.name}
+            className="freq-bought-chip"
+            onClick={() => onAdd(item.name)}
+          >
+            <span className="freq-bought-chip__icon">
+              {getCategoryIcon(item.category)}
+            </span>
+            <span className="freq-bought-chip__name">{item.name}</span>
+            <span className="freq-bought-chip__add">+</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ShoppingList() {
-  const { shoppingItems, showCompleted, toggleShowCompleted } = useStore();
+  const { shoppingItems, showCompleted, toggleShowCompleted, sendMessage } = useStore();
+  const [showSuggestion, setShowSuggestion] = useState(() => {
+    return localStorage.getItem('r2d-dismiss-shopping-suggestion') !== 'true';
+  });
 
   const unchecked = shoppingItems.filter(i => !i.checked);
   const checked = shoppingItems.filter(i => i.checked);
   const hasAny = shoppingItems.length > 0;
+
+  // Derive frequently bought items from checked items
+  const frequentlyBought = useMemo(() => {
+    // Count how many times each item name appears in the checked list
+    const nameCounts = {};
+    checked.forEach(item => {
+      const name = item.name;
+      if (!nameCounts[name]) {
+        nameCounts[name] = { name, category: item.category, count: 0 };
+      }
+      nameCounts[name].count++;
+    });
+
+    // Return items that have been bought multiple times, or just show top checked items
+    return Object.values(nameCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4)
+      .filter(item => !unchecked.some(u => u.name === item.name)); // Don't suggest items already in the list
+  }, [checked, unchecked]);
+
+  const handleDismissSuggestion = () => {
+    setShowSuggestion(false);
+    localStorage.setItem('r2d-dismiss-shopping-suggestion', 'true');
+  };
+
+  const handleQuickAdd = (name) => {
+    sendMessage(`买${name}`);
+  };
 
   if (!hasAny) {
     return (
@@ -64,6 +159,12 @@ export default function ShoppingList() {
 
   return (
     <div className="animate-fade-in">
+      {/* AI Suggestion Card */}
+      {showSuggestion && (
+        <AISuggestionCard onDismiss={handleDismissSuggestion} />
+      )}
+
+      {/* Pending items */}
       {unchecked.length > 0 && (
         <>
           <div className="section-header">
@@ -78,6 +179,10 @@ export default function ShoppingList() {
         </>
       )}
 
+      {/* Frequently Bought */}
+      <FrequentlyBoughtSection items={frequentlyBought} onAdd={handleQuickAdd} />
+
+      {/* Checked items */}
       {checked.length > 0 && (
         <div className="completed-section">
           <button className="completed-toggle" onClick={toggleShowCompleted}>

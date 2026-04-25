@@ -1,7 +1,6 @@
-import { useMemo } from 'react';
-import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
-import { Check, Trash2, Bell, CalendarClock, Repeat } from 'lucide-react';
+import { useMemo, useState, useRef, useEffect } from 'react';
+import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, differenceInMinutes } from 'date-fns';
+import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, BellOff } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 const RECURRENCE_LABELS = {
@@ -27,6 +26,28 @@ function getRecurrenceLabel(recurrence) {
   return recurrence;
 }
 
+function getRelativeStatus(datetime) {
+  if (!datetime) return null;
+  const date = parseISO(datetime);
+  const now = new Date();
+  const diffMin = differenceInMinutes(date, now);
+
+  if (diffMin < 0 && !isToday(date)) {
+    const absDiff = Math.abs(diffMin);
+    if (absDiff < 60) return { text: `已过期 ${absDiff} 分钟`, type: 'overdue' };
+    const hours = Math.floor(absDiff / 60);
+    return { text: `已过期 ${hours} 小时`, type: 'overdue' };
+  }
+  if (diffMin >= 0 && diffMin <= 15) return { text: `还有 ${diffMin} 分钟`, type: 'soon' };
+  if (diffMin > 15 && diffMin <= 60) return { text: `还有 ${diffMin} 分钟`, type: 'normal' };
+  if (diffMin > 60 && isToday(date)) {
+    const hours = Math.floor(diffMin / 60);
+    const mins = diffMin % 60;
+    return { text: `还有 ${hours} 小时 ${mins > 0 ? mins + ' 分钟' : ''}`, type: 'normal' };
+  }
+  return null;
+}
+
 function groupReminders(reminders) {
   const groups = {
     overdue: [],
@@ -42,9 +63,9 @@ function groupReminders(reminders) {
       groups.noDate.push(r);
       return;
     }
-    
+
     const date = parseISO(r.datetime);
-    
+
     if (isPast(date) && !isToday(date) && !r.completed) {
       groups.overdue.push(r);
     } else if (isToday(date)) {
@@ -81,15 +102,31 @@ const GROUP_LABELS = {
 
 function ReminderItem({ reminder }) {
   const { toggleReminder, deleteReminder } = useStore();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   const timeStr = reminder.datetime
     ? format(parseISO(reminder.datetime), 'HH:mm')
     : null;
-  
-  const isOverdue = reminder.datetime && 
-    isPast(parseISO(reminder.datetime)) && 
-    !isToday(parseISO(reminder.datetime)) && 
+
+  const isOverdue = reminder.datetime &&
+    isPast(parseISO(reminder.datetime)) &&
+    !isToday(parseISO(reminder.datetime)) &&
     !reminder.completed;
+
+  const status = !reminder.completed ? getRelativeStatus(reminder.datetime) : null;
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
 
   return (
     <div
@@ -102,35 +139,68 @@ function ReminderItem({ reminder }) {
           <span className="reminder-item__dot" />
         )}
       </div>
+      {timeStr && <span className="reminder-item__time-divider" />}
       <div className="reminder-item__content">
         <div className="reminder-item__title">
           {reminder.title}
           {reminder.recurrence && (
             <span className="reminder-item__recurrence">
-              <Repeat size={12} />
               {getRecurrenceLabel(reminder.recurrence)}
             </span>
           )}
         </div>
+        {status && (
+          <div className={`reminder-item__status reminder-item__status--${status.type}`}>
+            {status.text}
+          </div>
+        )}
         {reminder.notes && (
           <div className="reminder-item__notes">{reminder.notes}</div>
         )}
       </div>
       <div className="reminder-item__actions">
         <button
-          className="action-btn action-btn--success"
+          className={`check-circle-btn ${reminder.completed ? 'check-circle-btn--checked' : ''}`}
           onClick={() => toggleReminder(reminder.id)}
           aria-label={reminder.completed ? 'Mark incomplete' : 'Mark complete'}
         >
           <Check size={14} />
         </button>
-        <button
-          className="action-btn action-btn--danger"
-          onClick={() => deleteReminder(reminder.id)}
-          aria-label="Delete reminder"
-        >
-          <Trash2 size={14} />
-        </button>
+        <div ref={menuRef} style={{ position: 'relative' }}>
+          <button
+            className="three-dot-btn"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="More options"
+          >
+            <MoreVertical size={16} />
+          </button>
+          {menuOpen && (
+            <div className="dropdown-menu">
+              <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                <Pencil size={14} />
+                <span>编辑</span>
+              </button>
+              <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                <Clock size={14} />
+                <span>延后提醒</span>
+              </button>
+              <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                <Repeat size={14} />
+                <span>设置重复</span>
+              </button>
+              <button
+                className="dropdown-menu__item dropdown-menu__item--danger"
+                onClick={() => {
+                  deleteReminder(reminder.id);
+                  setMenuOpen(false);
+                }}
+              >
+                <Trash2 size={14} />
+                <span>删除</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -159,9 +229,6 @@ export default function RemindersView() {
           </button>
           <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('remind me to call mom at 5pm')}>
             "remind me to call mom at 5pm"
-          </button>
-          <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('下周三预约牙医')}>
-            "下周三预约牙医"
           </button>
           <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('每周日上午10点送女儿画画课')}>
             "每周日上午10点送女儿画画课"

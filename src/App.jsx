@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import Header from './components/Header';
 import InputBar from './components/InputBar';
+import NextUpCard from './components/NextUpCard';
 import RemindersView from './components/RemindersView';
 import ShoppingList from './components/ShoppingList';
 import MessageStatus from './components/MessageStatus';
@@ -60,12 +61,31 @@ export default function App() {
     m => m.status === 'pending' || m.status === 'processing'
   );
 
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'reminders':
+        return <RemindersView />;
+      case 'shopping':
+        return <ShoppingList />;
+      case 'all':
+      default:
+        return (
+          <>
+            <RemindersView />
+            <hr className="view-divider" />
+            <ShoppingList />
+          </>
+        );
+    }
+  };
+
   return (
     <div className="app">
       <Header />
+      {(activeTab === 'all' || activeTab === 'reminders') && <NextUpCard />}
       <main className="main-content">
         <MessageStatus messages={pendingMessages} />
-        {activeTab === 'reminders' ? <RemindersView /> : <ShoppingList />}
+        {renderContent()}
       </main>
       <InputBar />
       <Toast />

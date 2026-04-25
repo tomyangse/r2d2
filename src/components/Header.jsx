@@ -1,4 +1,4 @@
-import { Bell, ShoppingCart, LogOut } from 'lucide-react';
+import { Plus, LogOut } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 export default function Header() {
@@ -9,14 +9,49 @@ export default function Header() {
 
   return (
     <header className="header">
-      <div className="header__logo">R2D</div>
+      {/* Top Row: Brand + Actions */}
+      <div className="header__top-row">
+        <div className="header__brand">
+          <div className="header__logo">R2D</div>
+          <div className="header__subtitle">AI Life Assistant</div>
+        </div>
+        <div className="header__actions">
+          <button
+            className="header__logout"
+            onClick={signOut}
+            aria-label="Sign out"
+            title={user?.email}
+          >
+            <LogOut size={15} />
+          </button>
+          <button
+            className="header__add-btn"
+            aria-label="Add new"
+            onClick={() => {
+              // Focus the input bar
+              const input = document.querySelector('.input-bar__input');
+              if (input) input.focus();
+            }}
+          >
+            <Plus size={20} strokeWidth={1.5} />
+          </button>
+        </div>
+      </div>
+
+      {/* Tab Bar */}
       <nav className="header__tabs">
+        <button
+          className={`header__tab ${activeTab === 'all' ? 'header__tab--active' : ''}`}
+          onClick={() => setActiveTab('all')}
+          aria-label="All tab"
+        >
+          <span>全部</span>
+        </button>
         <button
           className={`header__tab ${activeTab === 'reminders' ? 'header__tab--active' : ''}`}
           onClick={() => setActiveTab('reminders')}
           aria-label="Reminders tab"
         >
-          <Bell size={14} />
           <span>日程</span>
           {pendingReminders > 0 && (
             <span className="header__tab-badge">{pendingReminders}</span>
@@ -27,21 +62,12 @@ export default function Header() {
           onClick={() => setActiveTab('shopping')}
           aria-label="Shopping list tab"
         >
-          <ShoppingCart size={14} />
           <span>购物</span>
           {pendingItems > 0 && (
             <span className="header__tab-badge">{pendingItems}</span>
           )}
         </button>
       </nav>
-      <button
-        className="header__logout"
-        onClick={signOut}
-        aria-label="Sign out"
-        title={user?.email}
-      >
-        <LogOut size={16} />
-      </button>
     </header>
   );
 }

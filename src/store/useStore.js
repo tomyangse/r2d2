@@ -5,7 +5,7 @@ export const useStore = create((set, get) => ({
   // --- State ---
   user: null,
   authLoading: true,
-  activeTab: 'reminders',
+  activeTab: 'all',
   reminders: [],
   shoppingItems: [],
   messages: [],
