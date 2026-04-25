@@ -51,8 +51,8 @@ export const useStore = create((set, get) => ({
   // Message Flow (async, fire-and-forget)
   // ==================================
 
-  sendMessage: async (input, source = 'text') => {
-    if (!input.trim()) return;
+  sendMessage: async (input, source = 'text', image = null) => {
+    if (!input.trim() && !image) return;
     const user = get().user;
     if (!user) return;
 
@@ -72,16 +72,23 @@ export const useStore = create((set, get) => ({
         messages: [data, ...state.messages],
       }));
 
-      // Fire-and-forget: invoke Edge Function directly (no pg_net trigger needed)
+      // Fire-and-forget: invoke Edge Function directly
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const body = { message_id: data.id, timezone };
+      if (image) {
+        body.image = image; // { base64, mimeType }
+      }
       supabase.functions.invoke('process-message', {
-        body: { message_id: data.id, timezone },
+        body,
       }).then(res => {
         console.log('Edge function response:', res);
         if (res.error) console.error('Edge function error:', res.error);
       }).catch(err => console.error('Edge function invoke failed:', err));
 
-      get().showToast('success', source === 'voice' ? '🎤 语音指令已发送' : '✨ 已发送，后台处理中...');
+      const toastMsg = source === 'voice' ? '🎤 语音指令已发送' 
+        : source === 'image' ? '📷 图片已发送，识别中...' 
+        : '✨ 已发送，后台处理中...';
+      get().showToast('success', toastMsg);
     } catch (error) {
       console.error('Send message error:', error);
       get().showToast('error', '发送失败，请重试');

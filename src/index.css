@@ -619,6 +619,85 @@ body {
   animation: spin 1s linear infinite;
 }
 
+/* --- Image Upload --- */
+.input-bar__image-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-smooth);
+  flex-shrink: 0;
+}
+
+.input-bar__image-btn:hover {
+  color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+}
+
+.input-bar__image-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.input-bar__image-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  margin: 0 var(--space-lg);
+  margin-bottom: -2px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: var(--border-subtle);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  animation: fadeIn var(--duration-fast) var(--ease-smooth);
+}
+
+.input-bar__image-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.input-bar__image-name {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.input-bar__image-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  flex-shrink: 0;
+}
+
+.input-bar__image-remove:hover {
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+}
+
 /* --- Empty State --- */
 .empty-state {
   display: flex;

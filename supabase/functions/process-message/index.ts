@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
   let parsedMessageId: string | null = null;
 
   try {
-    const { message_id, timezone } = await req.json();
+    const { message_id, timezone, image } = await req.json();
     parsedMessageId = message_id;
 
     if (!message_id) {
@@ -119,9 +119,21 @@ Deno.serve(async (req: Request) => {
     const now = new Date().toLocaleString("sv-SE", { timeZone: tz, hour12: false }) + ` (${tz})`;
     const prompt = SYSTEM_PROMPT + `\n\nCurrent date/time: ${now}\nUser timezone: ${tz}\nIMPORTANT: All datetime values in the response MUST use the user's timezone offset. For ${tz}, output datetimes like: 2026-04-26T15:00:00+02:00 (NOT UTC/Z).`;
 
+    // Build multimodal contents: text + optional image
+    const contentParts: any[] = [];
+    if (image?.base64 && image?.mimeType) {
+      contentParts.push({
+        inlineData: {
+          data: image.base64,
+          mimeType: image.mimeType,
+        },
+      });
+    }
+    contentParts.push({ text: message.input });
+
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: message.input,
+      contents: contentParts,
       config: {
         systemInstruction: prompt,
         temperature: 0.1,
