@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { GoogleGenAI } from "https://esm.sh/@google/genai@0.14";
+import { GoogleGenAI } from "https://esm.sh/@google/genai@1";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -14,7 +14,7 @@ const SYSTEM_PROMPT = `You are R2D, an AI assistant that manages reminders/sched
 Analyze the user's message and return a JSON response.
 
 Possible actions:
-1. ADD_REMINDER - Add a reminder/appointment/schedule
+1. ADD_REMINDER - Add a reminder/appointment/schedule (supports recurring)
 2. ADD_SHOPPING - Add items to shopping list
 3. COMPLETE_REMINDER - Mark reminder as done
 4. COMPLETE_SHOPPING - Mark shopping item(s) as done
@@ -27,29 +27,60 @@ Response format (valid JSON only, no markdown):
   "action": "ADD_REMINDER" | "ADD_SHOPPING" | "COMPLETE_REMINDER" | "COMPLETE_SHOPPING" | "DELETE_REMINDER" | "DELETE_SHOPPING" | "UNKNOWN",
   "data": {
     "title": "string (for reminders)",
-    "datetime": "ISO 8601 string or null (for reminders)",
+    "datetime": "ISO 8601 string or null (for reminders - the NEXT occurrence time)",
     "notes": "string or null (for reminders)",
+    "recurrence": "string or null (for reminders - recurrence pattern)",
     "items": [{"name": "string", "category": "string or null"}] (for shopping),
     "query": "string (for complete/delete - fuzzy match text)"
   },
   "message": "Brief friendly confirmation in the user's language"
 }
 
+Recurrence patterns:
+- null = one-time (default)
+- "daily" = every day
+- "weekdays" = Monday to Friday
+- "weekly:0" = every Sunday, "weekly:1" = every Monday, ..., "weekly:6" = every Saturday
+- "biweekly:0" to "biweekly:6" = every other week on that day
+- "monthly:15" = every month on the 15th
+
+Examples:
+- "每周日上午10点送女儿画画" → recurrence: "weekly:0", datetime: next Sunday 10:00
+- "每天早上8点吃药" → recurrence: "daily", datetime: tomorrow 08:00
+- "工作日下午5点打卡" → recurrence: "weekdays", datetime: next weekday 17:00
+- "每月15号交房租" → recurrence: "monthly:15", datetime: next 15th
+- "明天下午3点开会" → recurrence: null, datetime: tomorrow 15:00
+
 Rules:
 - Respond in the SAME LANGUAGE the user used
 - Parse relative dates: "明天" = tomorrow, "下周三" = next Wednesday, "今天下午3点" = today 3pm
+- For recurring reminders, set datetime to the NEXT occurrence
 - If no time specified, datetime = null
 - Split comma/、-separated shopping items into individual entries
 - ONLY output valid JSON`;
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  let parsedMessageId: string | null = null;
+
   try {
-    const { message_id } = await req.json();
+    const { message_id, timezone } = await req.json();
+    parsedMessageId = message_id;
 
     if (!message_id) {
       return new Response(JSON.stringify({ error: "message_id required" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -61,16 +92,16 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (fetchError || !message) {
-      return new Response(JSON.stringify({ error: "Message not found" }), {
+      return new Response(JSON.stringify({ error: "Message not found", detail: fetchError }), {
         status: 404,
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // Skip if already processed
     if (message.status !== "pending") {
       return new Response(JSON.stringify({ status: "already_processed" }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -84,11 +115,12 @@ Deno.serve(async (req: Request) => {
       .eq("id", message_id);
 
     // 3. Call Gemini
-    const now = new Date().toISOString();
-    const prompt = SYSTEM_PROMPT + `\n\nCurrent date/time: ${now}`;
+    const tz = timezone || "UTC";
+    const now = new Date().toLocaleString("sv-SE", { timeZone: tz, hour12: false }) + ` (${tz})`;
+    const prompt = SYSTEM_PROMPT + `\n\nCurrent date/time: ${now}\nUser timezone: ${tz}\nIMPORTANT: All datetime values in the response MUST use the user's timezone offset. For ${tz}, output datetimes like: 2026-04-26T15:00:00+02:00 (NOT UTC/Z).`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: message.input,
       config: {
         systemInstruction: prompt,
@@ -100,7 +132,7 @@ Deno.serve(async (req: Request) => {
     const text = response.text?.trim() || "";
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("No valid JSON in Gemini response");
+      throw new Error("No valid JSON in Gemini response: " + text.substring(0, 200));
     }
 
     const result = JSON.parse(jsonMatch[0]);
@@ -108,11 +140,12 @@ Deno.serve(async (req: Request) => {
     // 4. Execute the action (attach user_id to all inserts)
     switch (result.action) {
       case "ADD_REMINDER": {
-        const { title, datetime, notes } = result.data;
+        const { title, datetime, notes, recurrence } = result.data;
         await supabase.from("reminders").insert({
           title,
           datetime: datetime || null,
           notes: notes || null,
+          recurrence: recurrence || null,
           completed: false,
           user_id: userId,
         });
@@ -222,13 +255,14 @@ Deno.serve(async (req: Request) => {
       .eq("id", message_id);
 
     return new Response(JSON.stringify({ success: true, result }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    // Mark as error
-    try {
-      const { message_id } = await req.clone().json();
-      if (message_id) {
+    console.error("Edge function error:", error);
+
+    // Mark message as error
+    if (parsedMessageId) {
+      try {
         await supabase
           .from("messages")
           .update({
@@ -236,15 +270,15 @@ Deno.serve(async (req: Request) => {
             error: String(error),
             processed_at: new Date().toISOString(),
           })
-          .eq("id", message_id);
+          .eq("id", parsedMessageId);
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
 
     return new Response(JSON.stringify({ error: String(error) }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

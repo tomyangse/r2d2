@@ -1,8 +1,31 @@
 import { useMemo } from 'react';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { Check, Trash2, Bell, CalendarClock } from 'lucide-react';
+import { Check, Trash2, Bell, CalendarClock, Repeat } from 'lucide-react';
 import { useStore } from '../store/useStore';
+
+const RECURRENCE_LABELS = {
+  daily: '每天',
+  weekdays: '工作日',
+  'weekly:0': '每周日',
+  'weekly:1': '每周一',
+  'weekly:2': '每周二',
+  'weekly:3': '每周三',
+  'weekly:4': '每周四',
+  'weekly:5': '每周五',
+  'weekly:6': '每周六',
+};
+
+function getRecurrenceLabel(recurrence) {
+  if (!recurrence) return null;
+  if (RECURRENCE_LABELS[recurrence]) return RECURRENCE_LABELS[recurrence];
+  if (recurrence.startsWith('monthly:')) return `每月${recurrence.split(':')[1]}号`;
+  if (recurrence.startsWith('biweekly:')) {
+    const day = RECURRENCE_LABELS[`weekly:${recurrence.split(':')[1]}`];
+    return day ? `隔周${day.replace('每', '')}` : recurrence;
+  }
+  return recurrence;
+}
 
 function groupReminders(reminders) {
   const groups = {
@@ -80,7 +103,15 @@ function ReminderItem({ reminder }) {
         )}
       </div>
       <div className="reminder-item__content">
-        <div className="reminder-item__title">{reminder.title}</div>
+        <div className="reminder-item__title">
+          {reminder.title}
+          {reminder.recurrence && (
+            <span className="reminder-item__recurrence">
+              <Repeat size={12} />
+              {getRecurrenceLabel(reminder.recurrence)}
+            </span>
+          )}
+        </div>
         {reminder.notes && (
           <div className="reminder-item__notes">{reminder.notes}</div>
         )}
@@ -131,6 +162,9 @@ export default function RemindersView() {
           </button>
           <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('下周三预约牙医')}>
             "下周三预约牙医"
+          </button>
+          <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('每周日上午10点送女儿画画课')}>
+            "每周日上午10点送女儿画画课"
           </button>
         </div>
       </div>

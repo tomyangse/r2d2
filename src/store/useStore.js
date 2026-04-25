@@ -72,6 +72,15 @@ export const useStore = create((set, get) => ({
         messages: [data, ...state.messages],
       }));
 
+      // Fire-and-forget: invoke Edge Function directly (no pg_net trigger needed)
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      supabase.functions.invoke('process-message', {
+        body: { message_id: data.id, timezone },
+      }).then(res => {
+        console.log('Edge function response:', res);
+        if (res.error) console.error('Edge function error:', res.error);
+      }).catch(err => console.error('Edge function invoke failed:', err));
+
       get().showToast('success', source === 'voice' ? '🎤 语音指令已发送' : '✨ 已发送，后台处理中...');
     } catch (error) {
       console.error('Send message error:', error);

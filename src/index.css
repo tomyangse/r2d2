@@ -1149,3 +1149,19 @@ button:focus:not(:focus-visible) {
   color: var(--accent-danger);
 }
 
+/* --- Recurrence Badge --- */
+.reminder-item__recurrence {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--space-sm);
+  padding: 2px 8px;
+  background: rgba(108, 92, 231, 0.15);
+  color: var(--accent-primary);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
