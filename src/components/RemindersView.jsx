@@ -32,18 +32,27 @@ function getRelativeStatus(datetime) {
   const now = new Date();
   const diffMin = differenceInMinutes(date, now);
 
+  // Past items — not today → "overdue"
   if (diffMin < 0 && !isToday(date)) {
     const absDiff = Math.abs(diffMin);
     if (absDiff < 60) return { text: `已过期 ${absDiff} 分钟`, type: 'overdue' };
     const hours = Math.floor(absDiff / 60);
     return { text: `已过期 ${hours} 小时`, type: 'overdue' };
   }
+  // Past items — today → "elapsed" (softer visual)
+  if (diffMin < 0 && isToday(date)) {
+    const absDiff = Math.abs(diffMin);
+    if (absDiff < 60) return { text: `已过 ${absDiff} 分钟`, type: 'elapsed' };
+    const hours = Math.floor(absDiff / 60);
+    const mins = absDiff % 60;
+    return { text: `已过 ${hours} 小时${mins > 0 ? ' ' + mins + ' 分钟' : ''}`, type: 'elapsed' };
+  }
   if (diffMin >= 0 && diffMin <= 15) return { text: `还有 ${diffMin} 分钟`, type: 'soon' };
   if (diffMin > 15 && diffMin <= 60) return { text: `还有 ${diffMin} 分钟`, type: 'normal' };
   if (diffMin > 60 && isToday(date)) {
     const hours = Math.floor(diffMin / 60);
     const mins = diffMin % 60;
-    return { text: `还有 ${hours} 小时 ${mins > 0 ? mins + ' 分钟' : ''}`, type: 'normal' };
+    return { text: `还有 ${hours} 小时${mins > 0 ? ' ' + mins + ' 分钟' : ''}`, type: 'normal' };
   }
   return null;
 }
@@ -114,6 +123,12 @@ function ReminderItem({ reminder }) {
     !isToday(parseISO(reminder.datetime)) &&
     !reminder.completed;
 
+  // Today's item whose time has already passed
+  const isElapsed = reminder.datetime &&
+    isPast(parseISO(reminder.datetime)) &&
+    isToday(parseISO(reminder.datetime)) &&
+    !reminder.completed;
+
   const status = !reminder.completed ? getRelativeStatus(reminder.datetime) : null;
 
   // Close menu on outside click
@@ -130,7 +145,7 @@ function ReminderItem({ reminder }) {
 
   return (
     <div
-      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isOverdue ? 'reminder-item--overdue' : ''}`}
+      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isOverdue ? 'reminder-item--overdue' : ''} ${isElapsed ? 'reminder-item--elapsed' : ''}`}
     >
       <div className="reminder-item__time-col">
         {timeStr ? (

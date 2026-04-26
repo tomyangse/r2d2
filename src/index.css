@@ -618,6 +618,27 @@ body {
   color: var(--accent-danger);
 }
 
+.reminder-item__status--elapsed {
+  color: var(--text-muted);
+}
+
+/* Elapsed — today's past items */
+.reminder-item--elapsed {
+  opacity: 0.55;
+}
+
+.reminder-item--elapsed .reminder-item__time {
+  color: var(--text-muted);
+}
+
+.reminder-item--elapsed .reminder-item__title {
+  color: var(--text-tertiary);
+}
+
+.reminder-item--elapsed .reminder-item__dot {
+  background: var(--text-muted);
+}
+
 .reminder-item__notes {
   font-size: var(--font-size-sm);
   color: var(--text-tertiary);
