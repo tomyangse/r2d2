@@ -989,6 +989,53 @@ body {
   opacity: 1;
 }
 
+/* Compact variant for category groups */
+.shopping-item--compact {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: var(--space-xs) var(--space-md);
+  margin-bottom: 0;
+  border-radius: var(--radius-md);
+}
+
+.shopping-item--compact:hover {
+  background: var(--bg-hover);
+  box-shadow: none;
+}
+
+/* Category group */
+.category-group {
+  margin-bottom: var(--space-sm);
+}
+
+.category-group__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: 2px;
+}
+
+.category-group__emoji {
+  font-size: 1rem;
+}
+
+.category-group__name {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.category-group__count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
 /* ============================================
    AI SUGGESTION CARD
    ============================================ */

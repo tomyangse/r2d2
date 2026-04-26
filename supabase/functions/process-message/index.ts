@@ -30,7 +30,7 @@ Response format (valid JSON only, no markdown):
     "datetime": "ISO 8601 string or null (for reminders - the NEXT occurrence time)",
     "notes": "string or null (for reminders)",
     "recurrence": "string or null (for reminders - recurrence pattern)",
-    "items": [{"name": "string", "category": "string or null"}] (for shopping),
+    "items": [{"name": "string", "category": "string"}] (for shopping - MUST assign a category),
     "query": "string (for complete/delete - fuzzy match text)"
   },
   "message": "Brief friendly confirmation in the user's language"
@@ -57,7 +57,32 @@ Rules:
 - For recurring reminders, set datetime to the NEXT occurrence
 - If no time specified, datetime = null
 - Split comma/、-separated shopping items into individual entries
-- ONLY output valid JSON`;
+- ONLY output valid JSON
+
+Shopping categories (MUST use one of these exact values):
+Grocery categories (日常超市):
+- "果蔬" = fruits, vegetables, salad, herbs (Frukt & Grönt)
+- "肉类" = meat, poultry, minced meat (Kött & Fågel)
+- "鱼虾海鲜" = fish, shrimp, seafood (Fisk & Skaldjur)
+- "乳制品" = milk, cheese, yogurt, cream, butter (Mejeri)
+- "蛋类" = eggs (Ägg)
+- "面包烘焙" = bread, pastries, flour, baking (Bröd & Bageri)
+- "冷冻食品" = frozen meals, ice cream, frozen vegetables (Fryst)
+- "饮料" = juice, soda, water, coffee, tea (Drycker)
+- "零食" = chips, candy, chocolate, nuts (Snacks & Godis)
+- "调味品" = oil, vinegar, spices, soy sauce, ketchup (Kryddor & Såser)
+- "粮油干货" = rice, pasta, noodles, canned food, cereal (Skafferi)
+- "家用日化" = detergent, soap, toilet paper, cleaning (Hem & Hushåll)
+- "个护" = shampoo, toothpaste, skincare (Hygien)
+- "婴幼儿" = baby food, diapers (Baby)
+- "宠物" = pet food, pet supplies (Husdjur)
+Non-grocery categories (非日常用品):
+- "电子产品" = electronics, cables, batteries
+- "家具家居" = furniture, decoration, storage
+- "工具五金" = tools, hardware, screws
+- "服装鞋帽" = clothing, shoes, accessories
+- "其他" = anything that doesn't fit above`;
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
