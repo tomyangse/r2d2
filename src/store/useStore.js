@@ -42,9 +42,16 @@ export const useStore = create((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   // --- Toast ---
-  showToast: (type, message) => {
-    set({ toast: { type, message } });
-    setTimeout(() => set({ toast: null }), 3000);
+  showToast: (type, message, onUndo = null) => {
+    set({ toast: { type, message, onUndo } });
+    const duration = onUndo ? 5000 : 3000;
+    setTimeout(() => {
+      set(state => {
+        // Only clear if same toast is still showing
+        if (state.toast?.message === message) return { toast: null };
+        return {};
+      });
+    }, duration);
   },
 
   // ==================================
@@ -231,6 +238,33 @@ export const useStore = create((set, get) => ({
     }));
 
     await supabase.from('reminders').update({ completed: newVal }).eq('id', id);
+
+    // Show undo toast when marking complete
+    if (newVal) {
+      get().showToast('success', '已标记完成', () => {
+        get().toggleReminder(id);
+      });
+    }
+  },
+
+  postponeReminder: async (id) => {
+    const reminder = get().reminders.find(r => r.id === id);
+    if (!reminder || !reminder.datetime) return;
+
+    const current = new Date(reminder.datetime);
+    const tomorrow = new Date(current);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const newDatetime = tomorrow.toISOString();
+
+    // Optimistic update
+    set(state => ({
+      reminders: state.reminders.map(r =>
+        r.id === id ? { ...r, datetime: newDatetime } : r
+      ),
+    }));
+
+    await supabase.from('reminders').update({ datetime: newDatetime }).eq('id', id);
+    get().showToast('success', '已移到明天');
   },
 
   deleteReminder: async (id) => {

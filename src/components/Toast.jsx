@@ -7,6 +7,13 @@ export default function Toast() {
 
   if (!toast) return null;
 
+  const handleUndo = () => {
+    if (toast.onUndo) {
+      toast.onUndo();
+      useStore.setState({ toast: null });
+    }
+  };
+
   return (
     <div className={`ai-toast ai-toast--${toast.type}`}>
       <div className="ai-toast__icon">
@@ -17,6 +24,11 @@ export default function Toast() {
         )}
       </div>
       <span className="ai-toast__message">{toast.message}</span>
+      {toast.onUndo && (
+        <button className="ai-toast__undo" onClick={handleUndo}>
+          撤销
+        </button>
+      )}
     </div>
   );
 }

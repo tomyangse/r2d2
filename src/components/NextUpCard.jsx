@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { parseISO, isAfter, differenceInMinutes, differenceInHours, format } from 'date-fns';
+import { parseISO, isAfter, isToday, isTomorrow, differenceInMinutes, format } from 'date-fns';
 import { useStore } from '../store/useStore';
 
 export default function NextUpCard() {
@@ -28,6 +28,16 @@ export default function NextUpCard() {
   const minutes = totalMinutes % 60;
   const timeStr = format(targetDate, 'HH:mm');
 
+  // Date label
+  let dateLabel = '';
+  if (isToday(targetDate)) {
+    dateLabel = '今天';
+  } else if (isTomorrow(targetDate)) {
+    dateLabel = '明天';
+  } else {
+    dateLabel = format(targetDate, 'M月d日');
+  }
+
   let countdownStr = '';
   if (hours > 0) {
     countdownStr = `还有 ${hours} 小时 ${minutes} 分钟`;
@@ -48,7 +58,10 @@ export default function NextUpCard() {
         <span className="next-up-card__divider" />
         <span className="next-up-card__title">{nextUp.title}</span>
       </div>
-      <div className="next-up-card__countdown">{countdownStr}</div>
+      <div className="next-up-card__meta">
+        <span className="next-up-card__date-label">{dateLabel}</span>
+        <span className="next-up-card__countdown">{countdownStr}</span>
+      </div>
       {/* Decorative clock */}
       <div className="next-up-card__decoration">
         <div className="next-up-card__clock" />

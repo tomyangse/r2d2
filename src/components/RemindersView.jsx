@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, differenceInMinutes } from 'date-fns';
-import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, BellOff } from 'lucide-react';
+import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, ArrowRight, ChevronDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 const RECURRENCE_LABELS = {
@@ -26,34 +26,33 @@ function getRecurrenceLabel(recurrence) {
   return recurrence;
 }
 
-function getRelativeStatus(datetime) {
+/**
+ * Returns a status badge for the reminder.
+ * - Past today items (not completed) → "待确认" (pending confirmation)
+ * - Within 30 min → "即将开始" (starting soon)
+ * - Otherwise → null (clean, no status)
+ */
+function getStatusBadge(datetime, groupKey) {
   if (!datetime) return null;
   const date = parseISO(datetime);
   const now = new Date();
   const diffMin = differenceInMinutes(date, now);
 
-  // Past items — not today → "overdue"
-  if (diffMin < 0 && !isToday(date)) {
-    const absDiff = Math.abs(diffMin);
-    if (absDiff < 60) return { text: `已过期 ${absDiff} 分钟`, type: 'overdue' };
-    const hours = Math.floor(absDiff / 60);
-    return { text: `已过期 ${hours} 小时`, type: 'overdue' };
-  }
-  // Past items — today → "elapsed" (softer visual)
+  // Past items today → "待确认"
   if (diffMin < 0 && isToday(date)) {
-    const absDiff = Math.abs(diffMin);
-    if (absDiff < 60) return { text: `已过 ${absDiff} 分钟`, type: 'elapsed' };
-    const hours = Math.floor(absDiff / 60);
-    const mins = absDiff % 60;
-    return { text: `已过 ${hours} 小时${mins > 0 ? ' ' + mins + ' 分钟' : ''}`, type: 'elapsed' };
+    return { text: '待确认', type: 'pending' };
   }
-  if (diffMin >= 0 && diffMin <= 15) return { text: `还有 ${diffMin} 分钟`, type: 'soon' };
-  if (diffMin > 15 && diffMin <= 60) return { text: `还有 ${diffMin} 分钟`, type: 'normal' };
-  if (diffMin > 60 && isToday(date)) {
-    const hours = Math.floor(diffMin / 60);
-    const mins = diffMin % 60;
-    return { text: `还有 ${hours} 小时${mins > 0 ? ' ' + mins + ' 分钟' : ''}`, type: 'normal' };
+
+  // Past items from before today → also "待确认"
+  if (diffMin < 0 && !isToday(date)) {
+    return { text: '待确认', type: 'pending' };
   }
+
+  // Starting within 30 minutes → "即将开始"
+  if (diffMin >= 0 && diffMin <= 30) {
+    return { text: '即将开始', type: 'soon' };
+  }
+
   return null;
 }
 
@@ -101,7 +100,7 @@ function groupReminders(reminders) {
 }
 
 const GROUP_LABELS = {
-  overdue: '已过期',
+  overdue: '待确认',
   today: '今天',
   tomorrow: '明天',
   thisWeek: '本周',
@@ -109,8 +108,14 @@ const GROUP_LABELS = {
   noDate: '未设定时间',
 };
 
-function ReminderItem({ reminder }) {
-  const { toggleReminder, deleteReminder } = useStore();
+/**
+ * Full card reminder item — used for overdue, today, tomorrow groups.
+ * Adapts its visual based on groupKey:
+ * - overdue/today past items: show "待确认" badge + check circle
+ * - tomorrow: no check circle, only menu
+ */
+function ReminderItem({ reminder, groupKey }) {
+  const { toggleReminder, deleteReminder, postponeReminder } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -118,18 +123,9 @@ function ReminderItem({ reminder }) {
     ? format(parseISO(reminder.datetime), 'HH:mm')
     : null;
 
-  const isOverdue = reminder.datetime &&
-    isPast(parseISO(reminder.datetime)) &&
-    !isToday(parseISO(reminder.datetime)) &&
-    !reminder.completed;
-
-  // Today's item whose time has already passed
-  const isElapsed = reminder.datetime &&
-    isPast(parseISO(reminder.datetime)) &&
-    isToday(parseISO(reminder.datetime)) &&
-    !reminder.completed;
-
-  const status = !reminder.completed ? getRelativeStatus(reminder.datetime) : null;
+  const isPending = !reminder.completed && reminder.datetime && isPast(parseISO(reminder.datetime));
+  const isFuture = groupKey === 'tomorrow' || (groupKey === 'today' && !isPending);
+  const status = !reminder.completed ? getStatusBadge(reminder.datetime, groupKey) : null;
 
   // Close menu on outside click
   useEffect(() => {
@@ -145,11 +141,11 @@ function ReminderItem({ reminder }) {
 
   return (
     <div
-      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isOverdue ? 'reminder-item--overdue' : ''} ${isElapsed ? 'reminder-item--elapsed' : ''}`}
+      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isPending ? 'reminder-item--pending' : ''}`}
     >
       <div className="reminder-item__time-col">
         {timeStr ? (
-          <span className="reminder-item__time">{timeStr}</span>
+          <span className={`reminder-item__time ${isPending ? 'reminder-item__time--pending' : ''}`}>{timeStr}</span>
         ) : (
           <span className="reminder-item__dot" />
         )}
@@ -165,7 +161,7 @@ function ReminderItem({ reminder }) {
           )}
         </div>
         {status && (
-          <div className={`reminder-item__status reminder-item__status--${status.type}`}>
+          <div className={`status-badge status-badge--${status.type}`}>
             {status.text}
           </div>
         )}
@@ -174,13 +170,16 @@ function ReminderItem({ reminder }) {
         )}
       </div>
       <div className="reminder-item__actions">
-        <button
-          className={`check-circle-btn ${reminder.completed ? 'check-circle-btn--checked' : ''}`}
-          onClick={() => toggleReminder(reminder.id)}
-          aria-label={reminder.completed ? 'Mark incomplete' : 'Mark complete'}
-        >
-          <Check size={14} />
-        </button>
+        {/* Show check circle for pending items & today's items, but NOT for tomorrow */}
+        {!isFuture && !reminder.completed && (
+          <button
+            className="check-circle-btn"
+            onClick={() => toggleReminder(reminder.id)}
+            aria-label="Mark complete"
+          >
+            <Check size={14} />
+          </button>
+        )}
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
             className="three-dot-btn"
@@ -191,28 +190,49 @@ function ReminderItem({ reminder }) {
           </button>
           {menuOpen && (
             <div className="dropdown-menu">
-              <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
-                <Pencil size={14} />
-                <span>编辑</span>
-              </button>
-              <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
-                <Clock size={14} />
-                <span>延后提醒</span>
-              </button>
-              <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
-                <Repeat size={14} />
-                <span>设置重复</span>
-              </button>
-              <button
-                className="dropdown-menu__item dropdown-menu__item--danger"
-                onClick={() => {
-                  deleteReminder(reminder.id);
-                  setMenuOpen(false);
-                }}
-              >
-                <Trash2 size={14} />
-                <span>删除</span>
-              </button>
+              {isPending ? (
+                <>
+                  {/* Pending confirmation menu */}
+                  <button className="dropdown-menu__item" onClick={() => { toggleReminder(reminder.id); setMenuOpen(false); }}>
+                    <Check size={14} />
+                    <span>标记完成</span>
+                  </button>
+                  <button className="dropdown-menu__item" onClick={() => { postponeReminder(reminder.id); setMenuOpen(false); }}>
+                    <ArrowRight size={14} />
+                    <span>移到明天</span>
+                  </button>
+                  <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                    <Clock size={14} />
+                    <span>改时间</span>
+                  </button>
+                  <button
+                    className="dropdown-menu__item dropdown-menu__item--danger"
+                    onClick={() => { deleteReminder(reminder.id); setMenuOpen(false); }}
+                  >
+                    <Trash2 size={14} />
+                    <span>删除</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Future item menu */}
+                  <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                    <Pencil size={14} />
+                    <span>编辑</span>
+                  </button>
+                  <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                    <Clock size={14} />
+                    <span>改时间</span>
+                  </button>
+                  <button
+                    className="dropdown-menu__item dropdown-menu__item--danger"
+                    onClick={() => { deleteReminder(reminder.id); setMenuOpen(false); }}
+                  >
+                    <Trash2 size={14} />
+                    <span>删除</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -221,9 +241,14 @@ function ReminderItem({ reminder }) {
   );
 }
 
-// Compact single-line item for future dates (thisWeek, later, noDate)
+/**
+ * Compact single-line item for thisWeek / later / noDate groups.
+ * Shows recurrence label text instead of delete button for recurring items.
+ */
 function CompactReminderItem({ reminder }) {
-  const { toggleReminder, deleteReminder } = useStore();
+  const { deleteReminder } = useStore();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   let dateLabel = '';
   let timeLabel = '';
@@ -242,24 +267,77 @@ function CompactReminderItem({ reminder }) {
     timeLabel = format(date, 'HH:mm');
   }
 
+  const recurrenceLabel = getRecurrenceLabel(reminder.recurrence);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
   return (
     <div className={`compact-item ${reminder.completed ? 'compact-item--completed' : ''}`}>
-      <button
-        className={`compact-item__check ${reminder.completed ? 'compact-item__check--checked' : ''}`}
-        onClick={() => toggleReminder(reminder.id)}
-        aria-label="Toggle"
-      >
-        <Check size={10} />
-      </button>
       {dateLabel && <span className="compact-item__date">{dateLabel}</span>}
       {timeLabel && <span className="compact-item__time">{timeLabel}</span>}
       <span className="compact-item__title">{reminder.title}</span>
       {reminder.recurrence && (
-        <Repeat size={12} className="compact-item__recur" />
+        <>
+          <Repeat size={12} className="compact-item__recur" />
+          <span className="compact-item__recur-label">{recurrenceLabel}</span>
+        </>
       )}
-      <button className="compact-item__delete" onClick={() => deleteReminder(reminder.id)} aria-label="Delete">
-        <Trash2 size={12} />
-      </button>
+      <div ref={menuRef} style={{ position: 'relative' }}>
+        <button
+          className="three-dot-btn three-dot-btn--compact"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="More options"
+        >
+          <MoreVertical size={14} />
+        </button>
+        {menuOpen && (
+          <div className="dropdown-menu">
+            {reminder.recurrence ? (
+              <>
+                <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                  <Pencil size={14} />
+                  <span>编辑本次</span>
+                </button>
+                <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                  <Repeat size={14} />
+                  <span>编辑整个重复</span>
+                </button>
+                <button
+                  className="dropdown-menu__item dropdown-menu__item--danger"
+                  onClick={() => { deleteReminder(reminder.id); setMenuOpen(false); }}
+                >
+                  <Trash2 size={14} />
+                  <span>删除重复</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="dropdown-menu__item" onClick={() => setMenuOpen(false)}>
+                  <Pencil size={14} />
+                  <span>编辑</span>
+                </button>
+                <button
+                  className="dropdown-menu__item dropdown-menu__item--danger"
+                  onClick={() => { deleteReminder(reminder.id); setMenuOpen(false); }}
+                >
+                  <Trash2 size={14} />
+                  <span>删除</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -314,7 +392,7 @@ export default function RemindersView() {
             </div>
             {items.map((r, i) => (
               <div key={r.id} style={{ animationDelay: `${i * 50}ms` }}>
-                <ReminderItem reminder={r} />
+                <ReminderItem reminder={r} groupKey={key} />
               </div>
             ))}
           </div>
@@ -330,9 +408,11 @@ export default function RemindersView() {
             </span>
             <div className="section-header__line" />
           </div>
-          {groups.thisWeek.map(r => (
-            <CompactReminderItem key={r.id} reminder={r} />
-          ))}
+          <div className="compact-list-container">
+            {groups.thisWeek.map(r => (
+              <CompactReminderItem key={r.id} reminder={r} />
+            ))}
+          </div>
         </div>
       )}
 
@@ -347,9 +427,11 @@ export default function RemindersView() {
           </div>
           {showLater ? (
             <>
-              {groups.later.map(r => (
-                <CompactReminderItem key={r.id} reminder={r} />
-              ))}
+              <div className="compact-list-container">
+                {groups.later.map(r => (
+                  <CompactReminderItem key={r.id} reminder={r} />
+                ))}
+              </div>
               <button className="completed-toggle" onClick={() => setShowLater(false)}>
                 收起
               </button>
@@ -377,14 +459,25 @@ export default function RemindersView() {
         </div>
       )}
 
+      {/* Completed section — collapsible */}
       {completed.length > 0 && (
         <div className="completed-section">
-          <button className="completed-toggle" onClick={toggleShowCompleted}>
-            {showCompleted ? '隐藏' : '显示'} 已完成 ({completed.length})
+          <button
+            className={`completed-section__header ${showCompleted ? 'completed-section__header--open' : ''}`}
+            onClick={toggleShowCompleted}
+          >
+            <span className="completed-section__label">
+              已完成 ({completed.length})
+            </span>
+            <ChevronDown size={16} className="completed-section__chevron" />
           </button>
-          {showCompleted && completed.map(r => (
-            <ReminderItem key={r.id} reminder={r} />
-          ))}
+          {showCompleted && (
+            <div className="completed-section__list">
+              {completed.map(r => (
+                <ReminderItem key={r.id} reminder={r} groupKey="completed" />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

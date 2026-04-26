@@ -53,9 +53,7 @@ export default function Header() {
           aria-label="Reminders tab"
         >
           <span>日程</span>
-          {pendingReminders > 0 && (
-            <span className="header__tab-badge">{pendingReminders}</span>
-          )}
+          <span className="header__tab-badge">{pendingReminders}</span>
         </button>
         <button
           className={`header__tab ${activeTab === 'shopping' ? 'header__tab--active' : ''}`}
@@ -63,9 +61,7 @@ export default function Header() {
           aria-label="Shopping list tab"
         >
           <span>购物</span>
-          {pendingItems > 0 && (
-            <span className="header__tab-badge">{pendingItems}</span>
-          )}
+          <span className="header__tab-badge">{pendingItems}</span>
         </button>
       </nav>
     </header>
