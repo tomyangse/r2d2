@@ -31,29 +31,61 @@ export default function InputBar() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Compress image using canvas before sending (max 800px, JPEG 0.7)
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 800;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const ratio = Math.min(MAX / width, MAX / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        // Always output JPEG for smaller size
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        const base64 = dataUrl.split(',')[1];
+        resolve({ base64, mimeType: 'image/jpeg', preview: dataUrl });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+  };
+
   // Shared image processing logic
-  const processImageFile = (file, name) => {
+  const processImageFile = async (file, name) => {
     if (!file.type.startsWith('image/')) {
       useStore.getState().showToast('error', '请选择图片文件');
       return;
     }
-    if (file.size > 4 * 1024 * 1024) {
-      useStore.getState().showToast('error', '图片不能超过 4MB');
+    if (file.size > 10 * 1024 * 1024) {
+      useStore.getState().showToast('error', '图片不能超过 10MB');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64Full = reader.result;
-      const base64 = base64Full.split(',')[1];
-      setImageData({
-        base64,
-        mimeType: file.type,
-        preview: base64Full,
-        name: name || '粘贴的图片',
-      });
-    };
-    reader.readAsDataURL(file);
+    const compressed = await compressImage(file);
+    if (!compressed) {
+      useStore.getState().showToast('error', '图片处理失败');
+      return;
+    }
+
+    setImageData({
+      base64: compressed.base64,
+      mimeType: compressed.mimeType,
+      preview: compressed.preview,
+      name: name || '粘贴的图片',
+    });
   };
 
   const handleImageSelect = (e) => {
