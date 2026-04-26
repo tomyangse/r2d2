@@ -168,19 +168,37 @@ Deno.serve(async (req: Request) => {
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: contentParts,
       config: {
         systemInstruction: prompt,
         temperature: 0.1,
         maxOutputTokens: 500,
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
-    const text = response.text?.trim() || "";
+    // Extract text — handle both property and candidates array
+    let text = "";
+    try {
+      text = response.text?.trim() || "";
+    } catch {
+      // Fallback: extract from candidates
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (parts) {
+        text = parts
+          .filter((p: any) => p.text && !p.thought)
+          .map((p: any) => p.text)
+          .join("")
+          .trim();
+      }
+    }
+
+    console.log("Gemini raw response text:", text.substring(0, 300));
+
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("No valid JSON in Gemini response: " + text.substring(0, 200));
+      throw new Error("No valid JSON in Gemini response: " + text.substring(0, 300));
     }
 
     const result = JSON.parse(jsonMatch[0]);
