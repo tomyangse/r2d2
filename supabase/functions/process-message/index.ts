@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
   let parsedMessageId: string | null = null;
 
   try {
-    const { message_id, timezone, image } = await req.json();
+    const { message_id, timezone, image, audio } = await req.json();
     parsedMessageId = message_id;
 
     if (!message_id) {
@@ -119,7 +119,7 @@ Deno.serve(async (req: Request) => {
     const now = new Date().toLocaleString("sv-SE", { timeZone: tz, hour12: false }) + ` (${tz})`;
     const prompt = SYSTEM_PROMPT + `\n\nCurrent date/time: ${now}\nUser timezone: ${tz}\nIMPORTANT: All datetime values in the response MUST use the user's timezone offset. For ${tz}, output datetimes like: 2026-04-26T15:00:00+02:00 (NOT UTC/Z).`;
 
-    // Build multimodal contents: text + optional image
+    // Build multimodal contents: text + optional image/audio
     const contentParts: any[] = [];
     if (image?.base64 && image?.mimeType) {
       contentParts.push({
@@ -129,10 +129,21 @@ Deno.serve(async (req: Request) => {
         },
       });
     }
-    contentParts.push({ text: message.input });
+    if (audio?.base64 && audio?.mimeType) {
+      contentParts.push({
+        inlineData: {
+          data: audio.base64,
+          mimeType: audio.mimeType,
+        },
+      });
+      // For voice input, override the text prompt to instruct Gemini to listen
+      contentParts.push({ text: "Please listen to this audio recording. The user is giving you a voice command. Understand what they said and respond according to the system instructions. If the audio is unclear or too short, return action UNKNOWN." });
+    } else {
+      contentParts.push({ text: message.input });
+    }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash-preview",
       contents: contentParts,
       config: {
         systemInstruction: prompt,

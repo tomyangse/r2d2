@@ -1,87 +1,121 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 export default function VoiceButton({ onResult, disabled }) {
-  const [isListening, setIsListening] = useState(false);
-  const [interim, setInterim] = useState('');
-  const recognitionRef = useRef(null);
-  const finalTranscriptRef = useRef('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const streamRef = useRef(null);
 
-  const isSupported = !!SpeechRecognition;
+  // Check if MediaRecorder is supported
+  const isSupported = typeof MediaRecorder !== 'undefined' && navigator.mediaDevices?.getUserMedia;
 
   const stop = useCallback(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
+    // Stop timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-    setIsListening(false);
-    setInterim('');
+
+    // Stop recorder
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+
+    // Stop media stream tracks
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+
+    setIsRecording(false);
+    setDuration(0);
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     if (!isSupported || disabled) return;
 
-    finalTranscriptRef.current = '';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      streamRef.current = stream;
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'zh-CN';
-    recognition.maxAlternatives = 1;
+      // Determine best supported MIME type
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/mp4';
 
-    recognition.onstart = () => setIsListening(true);
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        audioBitsPerSecond: 32000, // Keep small for fast upload
+      });
 
-    recognition.onresult = (event) => {
-      let finalText = '';
-      let interimText = '';
+      chunksRef.current = [];
 
-      for (let i = 0; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalText += transcript;
-        } else {
-          interimText += transcript;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
         }
-      }
+      };
 
-      if (finalText) {
-        finalTranscriptRef.current = finalText;
-      }
-      setInterim(interimText || finalText);
-    };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        chunksRef.current = [];
 
-    recognition.onerror = (event) => {
-      console.warn('Speech recognition error:', event.error);
-      stop();
-    };
+        if (blob.size < 500) {
+          // Too short, ignore
+          return;
+        }
 
-    recognition.onend = () => {
-      setIsListening(false);
-      setInterim('');
-      // Send whatever we got when recognition ends (user released button)
-      const text = finalTranscriptRef.current;
-      if (text.trim()) {
-        onResult(text.trim());
-      }
-      finalTranscriptRef.current = '';
-    };
+        // Convert to base64 and send
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Full = reader.result; // data:audio/webm;...;base64,...
+          const base64 = base64Full.split(',')[1];
+          const actualMime = mimeType.split(';')[0]; // "audio/webm"
+          onResult({ base64, mimeType: actualMime });
+        };
+        reader.readAsDataURL(blob);
+      };
 
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [isSupported, disabled, onResult, stop]);
+      recorderRef.current = recorder;
+      recorder.start(100); // Collect in 100ms chunks
+      setIsRecording(true);
+
+      // Duration timer
+      setDuration(0);
+      timerRef.current = setInterval(() => {
+        setDuration(d => d + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Microphone access error:', err);
+    }
+  }, [isSupported, disabled, onResult]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
       }
     };
   }, []);
 
-  // Handle pointer down (start) and pointer up (stop)
+  // Press-and-hold handlers
   const handlePointerDown = (e) => {
     e.preventDefault();
     if (disabled) return;
@@ -90,16 +124,17 @@ export default function VoiceButton({ onResult, disabled }) {
 
   const handlePointerUp = (e) => {
     e.preventDefault();
-    if (isListening) {
-      stop();
-    }
+    if (isRecording) stop();
   };
 
-  // Also stop if pointer leaves the button while held
   const handlePointerLeave = () => {
-    if (isListening) {
-      stop();
-    }
+    if (isRecording) stop();
+  };
+
+  const formatDuration = (s) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
   };
 
   if (!isSupported) return null;
@@ -107,24 +142,24 @@ export default function VoiceButton({ onResult, disabled }) {
   return (
     <>
       <button
-        className={`voice-btn ${isListening ? 'voice-btn--active' : ''}`}
+        className={`voice-btn ${isRecording ? 'voice-btn--active' : ''}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         onContextMenu={(e) => e.preventDefault()}
         disabled={disabled}
-        aria-label={isListening ? 'Release to send' : 'Hold to speak'}
+        aria-label={isRecording ? 'Release to send' : 'Hold to speak'}
         type="button"
       >
-        {isListening ? <MicOff size={16} /> : <Mic size={16} />}
-        {isListening && (
+        {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+        {isRecording && (
           <span className="voice-btn__pulse" />
         )}
       </button>
-      {interim && (
+      {isRecording && (
         <div className="voice-interim">
-          <span className="voice-interim__text">{interim}</span>
           <span className="voice-interim__dot">●</span>
+          <span className="voice-interim__text">录音中 {formatDuration(duration)}</span>
         </div>
       )}
     </>

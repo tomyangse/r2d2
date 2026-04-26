@@ -51,8 +51,8 @@ export const useStore = create((set, get) => ({
   // Message Flow (async, fire-and-forget)
   // ==================================
 
-  sendMessage: async (input, source = 'text', image = null) => {
-    if (!input.trim() && !image) return;
+  sendMessage: async (input, source = 'text', image = null, audio = null) => {
+    if (!input.trim() && !image && !audio) return;
     const user = get().user;
     if (!user) return;
 
@@ -77,6 +77,9 @@ export const useStore = create((set, get) => ({
       const body = { message_id: data.id, timezone };
       if (image) {
         body.image = image; // { base64, mimeType }
+      }
+      if (audio) {
+        body.audio = audio; // { base64, mimeType }
       }
       supabase.functions.invoke('process-message', {
         body,

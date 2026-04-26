@@ -129,9 +129,10 @@ export default function InputBar() {
     await sendMessage(inputText, image ? 'image' : 'text', image);
   };
 
-  const handleVoiceResult = async (transcript) => {
+  const handleVoiceResult = async (audioData) => {
+    // audioData = { base64, mimeType }
     setValue('');
-    await sendMessage(transcript, 'voice');
+    await sendMessage('语音输入', 'voice', null, audioData);
   };
 
   const handleKeyDown = (e) => {
