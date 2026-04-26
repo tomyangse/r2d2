@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Check, Trash2, ShoppingBag, MoreVertical, X } from 'lucide-react';
+import { Check, Trash2, ShoppingBag, MoreVertical } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 // Category emoji map for frequently bought items
@@ -53,23 +53,7 @@ function ShoppingItem({ item }) {
   );
 }
 
-function AISuggestionCard({ onDismiss }) {
-  return (
-    <div className="ai-suggestion-card">
-      <button className="ai-suggestion-card__close" onClick={onDismiss} aria-label="Dismiss">
-        <X size={14} />
-      </button>
-      <div className="ai-suggestion-card__label">
-        <span>✨</span>
-        <span>建议按分类整理购物清单</span>
-      </div>
-      <div className="ai-suggestion-card__text">
-        分类后更清晰，采购更高效
-      </div>
-      <div className="ai-suggestion-card__decoration">🧺</div>
-    </div>
-  );
-}
+
 
 function FrequentlyBoughtSection({ items, onAdd }) {
   if (!items || items.length === 0) return null;
@@ -98,9 +82,6 @@ function FrequentlyBoughtSection({ items, onAdd }) {
 
 export default function ShoppingList() {
   const { shoppingItems, showCompleted, toggleShowCompleted, sendMessage } = useStore();
-  const [showSuggestion, setShowSuggestion] = useState(() => {
-    return localStorage.getItem('r2d-dismiss-shopping-suggestion') !== 'true';
-  });
 
   const unchecked = shoppingItems.filter(i => !i.checked);
   const checked = shoppingItems.filter(i => i.checked);
@@ -124,11 +105,6 @@ export default function ShoppingList() {
       .slice(0, 4)
       .filter(item => !unchecked.some(u => u.name === item.name)); // Don't suggest items already in the list
   }, [checked, unchecked]);
-
-  const handleDismissSuggestion = () => {
-    setShowSuggestion(false);
-    localStorage.setItem('r2d-dismiss-shopping-suggestion', 'true');
-  };
 
   const handleQuickAdd = (name) => {
     sendMessage(`买${name}`);
@@ -159,10 +135,6 @@ export default function ShoppingList() {
 
   return (
     <div className="animate-fade-in">
-      {/* AI Suggestion Card */}
-      {showSuggestion && (
-        <AISuggestionCard onDismiss={handleDismissSuggestion} />
-      )}
 
       {/* Pending items */}
       {unchecked.length > 0 && (
