@@ -31,11 +31,8 @@ export default function InputBar() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const handleImageSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type and size
+  // Shared image processing logic
+  const processImageFile = (file, name) => {
     if (!file.type.startsWith('image/')) {
       useStore.getState().showToast('error', '请选择图片文件');
       return;
@@ -47,19 +44,41 @@ export default function InputBar() {
 
     const reader = new FileReader();
     reader.onload = () => {
-      const base64Full = reader.result; // data:image/xxx;base64,...
-      const base64 = base64Full.split(',')[1]; // pure base64
+      const base64Full = reader.result;
+      const base64 = base64Full.split(',')[1];
       setImageData({
         base64,
         mimeType: file.type,
         preview: base64Full,
-        name: file.name,
+        name: name || '粘贴的图片',
       });
     };
     reader.readAsDataURL(file);
+  };
 
-    // Reset file input
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processImageFile(file, file.name);
     e.target.value = '';
+  };
+
+  // Paste image from clipboard (Ctrl+V / Cmd+V)
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          processImageFile(file, '粘贴的图片');
+        }
+        return;
+      }
+    }
+    // If no image found, let the default paste (text) happen
   };
 
   const clearImage = () => {
@@ -109,7 +128,7 @@ export default function InputBar() {
           onClick={() => fileInputRef.current?.click()}
           disabled={isProcessing}
           aria-label="Upload image"
-          title="上传图片识别"
+          title="上传图片识别 / 可直接粘贴"
         >
           <ImagePlus size={18} />
         </button>
@@ -126,6 +145,7 @@ export default function InputBar() {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={imageData ? "添加说明（可选）..." : "说一句，我来安排…"}
           rows={1}
           disabled={isProcessing}
