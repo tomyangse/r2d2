@@ -266,12 +266,16 @@ function CompactReminderItem({ reminder }) {
 
 export default function RemindersView() {
   const { reminders, showCompleted, toggleShowCompleted } = useStore();
+  const [showLater, setShowLater] = useState(false);
 
   const active = reminders.filter(r => !r.completed);
   const completed = reminders.filter(r => r.completed);
   const groups = useMemo(() => groupReminders(active), [active]);
 
   const hasAny = reminders.length > 0;
+
+  // Groups that get full card rendering
+  const detailGroups = ['overdue', 'today', 'tomorrow'];
 
   if (!hasAny) {
     return (
@@ -295,13 +299,6 @@ export default function RemindersView() {
       </div>
     );
   }
-
-  // Groups that get full card rendering
-  const detailGroups = ['overdue', 'today', 'tomorrow'];
-  // Groups that get compact rendering
-  const compactGroups = ['thisWeek', 'later', 'noDate'];
-
-  const [showLater, setShowLater] = useState(false);
 
   return (
     <div className="animate-fade-in">
