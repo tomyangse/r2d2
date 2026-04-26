@@ -719,10 +719,15 @@ body {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: var(--space-xs);
-  z-index: 50;
+  z-index: 100;
   min-width: 140px;
   animation: scaleIn var(--duration-fast) var(--ease-spring) forwards;
   transform-origin: top right;
+}
+
+/* Lift the parent card above siblings when its dropdown is open */
+.reminder-item--menu-open {
+  z-index: 60;
 }
 
 .dropdown-menu__item {
