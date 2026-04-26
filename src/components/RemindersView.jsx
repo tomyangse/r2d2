@@ -221,6 +221,49 @@ function ReminderItem({ reminder }) {
   );
 }
 
+// Compact single-line item for future dates (thisWeek, later, noDate)
+function CompactReminderItem({ reminder }) {
+  const { toggleReminder, deleteReminder } = useStore();
+
+  let dateLabel = '';
+  let timeLabel = '';
+
+  if (reminder.datetime) {
+    const date = parseISO(reminder.datetime);
+    const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+    if (isThisWeek(date)) {
+      dateLabel = dayNames[date.getDay()];
+    } else {
+      dateLabel = format(date, 'M/d');
+      const dayName = dayNames[date.getDay()];
+      dateLabel += ` ${dayName}`;
+    }
+    timeLabel = format(date, 'HH:mm');
+  }
+
+  return (
+    <div className={`compact-item ${reminder.completed ? 'compact-item--completed' : ''}`}>
+      <button
+        className={`compact-item__check ${reminder.completed ? 'compact-item__check--checked' : ''}`}
+        onClick={() => toggleReminder(reminder.id)}
+        aria-label="Toggle"
+      >
+        <Check size={10} />
+      </button>
+      {dateLabel && <span className="compact-item__date">{dateLabel}</span>}
+      {timeLabel && <span className="compact-item__time">{timeLabel}</span>}
+      <span className="compact-item__title">{reminder.title}</span>
+      {reminder.recurrence && (
+        <Repeat size={12} className="compact-item__recur" />
+      )}
+      <button className="compact-item__delete" onClick={() => deleteReminder(reminder.id)} aria-label="Delete">
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+}
+
 export default function RemindersView() {
   const { reminders, showCompleted, toggleShowCompleted } = useStore();
 
@@ -253,10 +296,19 @@ export default function RemindersView() {
     );
   }
 
+  // Groups that get full card rendering
+  const detailGroups = ['overdue', 'today', 'tomorrow'];
+  // Groups that get compact rendering
+  const compactGroups = ['thisWeek', 'later', 'noDate'];
+
+  const [showLater, setShowLater] = useState(false);
+
   return (
     <div className="animate-fade-in">
-      {Object.entries(groups).map(([key, items]) => {
-        if (items.length === 0) return null;
+      {/* Detailed card groups: overdue, today, tomorrow */}
+      {detailGroups.map(key => {
+        const items = groups[key];
+        if (!items || items.length === 0) return null;
         return (
           <div key={key}>
             <div className="section-header">
@@ -271,6 +323,62 @@ export default function RemindersView() {
           </div>
         );
       })}
+
+      {/* Compact list: thisWeek */}
+      {groups.thisWeek.length > 0 && (
+        <div>
+          <div className="section-header">
+            <span className="section-header__title">
+              {GROUP_LABELS.thisWeek} ({groups.thisWeek.length})
+            </span>
+            <div className="section-header__line" />
+          </div>
+          {groups.thisWeek.map(r => (
+            <CompactReminderItem key={r.id} reminder={r} />
+          ))}
+        </div>
+      )}
+
+      {/* Compact list: later (collapsed by default) */}
+      {groups.later.length > 0 && (
+        <div>
+          <div className="section-header">
+            <span className="section-header__title">
+              之后 ({groups.later.length})
+            </span>
+            <div className="section-header__line" />
+          </div>
+          {showLater ? (
+            <>
+              {groups.later.map(r => (
+                <CompactReminderItem key={r.id} reminder={r} />
+              ))}
+              <button className="completed-toggle" onClick={() => setShowLater(false)}>
+                收起
+              </button>
+            </>
+          ) : (
+            <button className="completed-toggle" onClick={() => setShowLater(true)}>
+              展开查看 {groups.later.length} 项日程
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* No date items */}
+      {groups.noDate.length > 0 && (
+        <div>
+          <div className="section-header">
+            <span className="section-header__title">
+              {GROUP_LABELS.noDate} ({groups.noDate.length})
+            </span>
+            <div className="section-header__line" />
+          </div>
+          {groups.noDate.map(r => (
+            <CompactReminderItem key={r.id} reminder={r} />
+          ))}
+        </div>
+      )}
 
       {completed.length > 0 && (
         <div className="completed-section">

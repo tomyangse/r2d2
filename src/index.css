@@ -781,6 +781,117 @@ body {
 }
 
 /* ============================================
+   COMPACT REMINDER ITEM — Single Line
+   ============================================ */
+.compact-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-smooth);
+  margin-bottom: 2px;
+}
+
+.compact-item:hover {
+  background: var(--bg-hover);
+}
+
+.compact-item--completed {
+  opacity: 0.4;
+}
+
+.compact-item--completed .compact-item__title {
+  text-decoration: line-through;
+}
+
+.compact-item__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-tertiary);
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.compact-item__check:hover {
+  border-color: var(--accent-primary);
+}
+
+.compact-item__check--checked {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.compact-item__date {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: var(--accent-primary-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.compact-item__time {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.compact-item__title {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-item__recur {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.compact-item__delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.compact-item:hover .compact-item__delete {
+  color: var(--text-muted);
+}
+
+.compact-item__delete:hover {
+  color: var(--accent-danger) !important;
+  background: var(--accent-danger-soft);
+}
+
+/* ============================================
    SHOPPING ITEM — Card Style
    ============================================ */
 .shopping-item {
