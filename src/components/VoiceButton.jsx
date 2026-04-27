@@ -8,34 +8,45 @@ export default function VoiceButton({ onResult, disabled }) {
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const streamRef = useRef(null);
+  const pointerDownRef = useRef(false); // Track if finger/mouse is still held
 
   // Check if MediaRecorder is supported
   const isSupported = typeof MediaRecorder !== 'undefined' && navigator.mediaDevices?.getUserMedia;
 
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
   const stop = useCallback(() => {
+    pointerDownRef.current = false;
+
     // Stop timer
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    // Stop recorder
+    // Stop recorder — onstop callback will handle the blob and stream cleanup
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      console.log('[Voice] Stopping recorder, state:', recorderRef.current.state);
       recorderRef.current.stop();
-    }
-
-    // Stop media stream tracks
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
+    } else {
+      // Recorder never started or already inactive — clean up stream
+      console.log('[Voice] Recorder already inactive, cleaning up stream');
+      stopStream();
     }
 
     setIsRecording(false);
     setDuration(0);
-  }, []);
+  }, [stopStream]);
 
   const start = useCallback(async () => {
     if (!isSupported || disabled) return;
+
+    pointerDownRef.current = true;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -46,6 +57,14 @@ export default function VoiceButton({ onResult, disabled }) {
           noiseSuppression: true,
         },
       });
+
+      // If user already released while we were waiting for mic permission, abort
+      if (!pointerDownRef.current) {
+        console.log('[Voice] Pointer released during getUserMedia, aborting');
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
       streamRef.current = stream;
 
       // Determine best supported MIME type
@@ -69,21 +88,33 @@ export default function VoiceButton({ onResult, disabled }) {
       };
 
       recorder.onstop = () => {
+        console.log('[Voice] onstop fired, chunks:', chunksRef.current.length);
         const blob = new Blob(chunksRef.current, { type: mimeType });
         chunksRef.current = [];
 
-        if (blob.size < 500) {
+        // Clean up stream after data is collected
+        stopStream();
+
+        console.log('[Voice] Blob size:', blob.size, 'type:', blob.type);
+
+        if (blob.size < 100) {
           // Too short, ignore
+          console.log('[Voice] Blob too small, ignoring');
           return;
         }
 
         // Convert to base64 and send
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64Full = reader.result; // data:audio/webm;...;base64,...
+          const base64Full = reader.result;
           const base64 = base64Full.split(',')[1];
           const actualMime = mimeType.split(';')[0]; // "audio/webm"
+          console.log('[Voice] Sending audio, base64 length:', base64?.length, 'mime:', actualMime);
           onResult({ base64, mimeType: actualMime });
+        };
+        reader.onerror = (err) => {
+          console.error('[Voice] FileReader error:', err);
+          stopStream();
         };
         reader.readAsDataURL(blob);
       };
@@ -99,8 +130,9 @@ export default function VoiceButton({ onResult, disabled }) {
       }, 1000);
     } catch (err) {
       console.error('Microphone access error:', err);
+      pointerDownRef.current = false;
     }
-  }, [isSupported, disabled, onResult]);
+  }, [isSupported, disabled, onResult, stopStream]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -124,12 +156,24 @@ export default function VoiceButton({ onResult, disabled }) {
 
   const handlePointerUp = (e) => {
     e.preventDefault();
-    if (isRecording) stop();
+    // Always call stop — it checks pointerDownRef and recorder state internally
+    stop();
   };
 
   const handlePointerLeave = () => {
-    if (isRecording) stop();
+    if (pointerDownRef.current) stop();
   };
+
+  // Also listen for global pointerup in case finger moves off button
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (pointerDownRef.current) {
+        stop();
+      }
+    };
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    return () => window.removeEventListener('pointerup', handleGlobalPointerUp);
+  }, [stop]);
 
   const formatDuration = (s) => {
     const mins = Math.floor(s / 60);
@@ -150,6 +194,7 @@ export default function VoiceButton({ onResult, disabled }) {
         disabled={disabled}
         aria-label={isRecording ? 'Release to send' : 'Hold to speak'}
         type="button"
+        style={{ touchAction: 'none' }}
       >
         {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
         {isRecording && (

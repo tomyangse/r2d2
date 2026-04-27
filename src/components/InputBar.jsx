@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader, ImagePlus, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import VoiceButton from './VoiceButton';
@@ -129,11 +129,12 @@ export default function InputBar() {
     await sendMessage(inputText, image ? 'image' : 'text', image);
   };
 
-  const handleVoiceResult = async (audioData) => {
+  const handleVoiceResult = useCallback(async (audioData) => {
     // audioData = { base64, mimeType }
+    console.log('[InputBar] Voice result received, audio size:', audioData?.base64?.length);
     setValue('');
     await sendMessage('语音输入', 'voice', null, audioData);
-  };
+  }, [sendMessage]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
