@@ -7,6 +7,7 @@ import ShoppingList from './components/ShoppingList';
 import MessageStatus from './components/MessageStatus';
 import Toast from './components/Toast';
 import AuthPage from './components/AuthPage';
+import PushBanner from './components/PushBanner';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 
@@ -82,6 +83,7 @@ export default function App() {
   return (
     <div className="app">
       <Header />
+      <PushBanner />
       {(activeTab === 'all' || activeTab === 'reminders') && <NextUpCard />}
       <main className="main-content">
         <MessageStatus messages={pendingMessages} />

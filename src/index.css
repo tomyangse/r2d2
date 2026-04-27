@@ -1965,3 +1965,82 @@ button:focus:not(:focus-visible) {
   z-index: 40;
   background: transparent;
 }
+
+/* ============================================
+   PUSH NOTIFICATION BANNER
+   ============================================ */
+.push-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin: 0 var(--space-lg) var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--gradient-next-up);
+  border-radius: var(--radius-lg);
+  border: var(--border-subtle);
+  animation: slideDown var(--duration-slow) var(--ease-spring) forwards;
+}
+
+.push-banner__content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.push-banner__icon {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.push-banner__text {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.push-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.push-banner__btn {
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 14px;
+  transition: all var(--duration-base) var(--ease-smooth);
+}
+
+.push-banner__btn--enable {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.push-banner__btn--enable:hover {
+  background: #4a3db5;
+  box-shadow: var(--shadow-sm);
+}
+
+.push-banner__btn--enable:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.push-banner__btn--dismiss {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.push-banner__btn--dismiss:hover {
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.04);
+}
+
