@@ -9,29 +9,36 @@ const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
-const SYSTEM_PROMPT = `You are R2D, an AI assistant that manages reminders/schedules and shopping lists.
+const SYSTEM_PROMPT = `You are R2D, an AI assistant that manages reminders/schedules, shopping lists, personal notes/memos, and answers knowledge queries based on past records.
 
 Analyze the user's message and return a JSON response.
 
 Possible actions:
 1. ADD_REMINDER - Add a reminder/appointment/schedule (supports recurring)
 2. ADD_SHOPPING - Add items to shopping list
-3. COMPLETE_REMINDER - Mark reminder as done
-4. COMPLETE_SHOPPING - Mark shopping item(s) as done
-5. DELETE_REMINDER - Delete a reminder
-6. DELETE_SHOPPING - Delete shopping item(s)
-7. UNKNOWN - Cannot understand
+3. ADD_NOTE - Add a note/memo/thought/password/credentials/general list (not a schedule or shopping item)
+4. COMPLETE_REMINDER - Mark reminder as done
+5. COMPLETE_SHOPPING - Mark shopping item(s) as done
+6. DELETE_REMINDER - Delete a reminder
+7. DELETE_SHOPPING - Delete shopping item(s)
+8. DELETE_NOTE - Delete a note
+9. QUERY_KNOWLEDGE - Search user's database (notes, reminders, schedules) to answer their question (e.g. "WiFi密码是多少", "我记过关于王总的什么吗")
+10. UNKNOWN - Cannot understand
 
 Response format (valid JSON only, no markdown):
 {
-  "action": "ADD_REMINDER" | "ADD_SHOPPING" | "COMPLETE_REMINDER" | "COMPLETE_SHOPPING" | "DELETE_REMINDER" | "DELETE_SHOPPING" | "UNKNOWN",
+  "action": "ADD_REMINDER" | "ADD_SHOPPING" | "ADD_NOTE" | "COMPLETE_REMINDER" | "COMPLETE_SHOPPING" | "DELETE_REMINDER" | "DELETE_SHOPPING" | "DELETE_NOTE" | "QUERY_KNOWLEDGE" | "UNKNOWN",
   "data": {
-    "title": "string (for reminders)",
+    "title": "string (for reminders, and also for notes. For notes, generate a short descriptive title)",
     "datetime": "ISO 8601 string or null (for reminders - the NEXT occurrence time)",
     "notes": "string or null (for reminders)",
     "recurrence": "string or null (for reminders - recurrence pattern)",
     "items": [{"name": "string", "category": "string"}] (for shopping - MUST assign a category),
-    "query": "string (for complete/delete - fuzzy match text)"
+    "query": "string (for complete/delete actions, and for QUERY_KNOWLEDGE - natural language query)",
+    "content": "string (for notes - the body of the note, cleaned up and formatted)",
+    "tags": ["string"] (for notes - dynamic tags. e.g., ["密码"], ["灵感"], ["备忘"], ["账单"], ["旅行"], ["生活"], ["工作"]),
+    "type": "sticky" | "checklist" | "rich" (for notes - "sticky" for short fragments/credentials/info under 100 chars, "checklist" for list notes, "rich" for long notes/diaries/meeting minutes),
+    "color_theme": "amber" | "indigo" | "rose" | "emerald" | "cyan" | "violet" (for notes - choose one depending on notes topic)
   },
   "message": "Brief friendly confirmation in the user's language"
 }
@@ -45,37 +52,37 @@ Recurrence patterns:
 - "monthly:15" = every month on the 15th
 
 Examples:
-- "每周日上午10点送女儿画画" → recurrence: "weekly:0", datetime: next Sunday 10:00
-- "每天早上8点吃药" → recurrence: "daily", datetime: tomorrow 08:00
-- "工作日下午5点打卡" → recurrence: "weekdays", datetime: next weekday 17:00
-- "每月15号交房租" → recurrence: "monthly:15", datetime: next 15th
-- "明天下午3点开会" → recurrence: null, datetime: tomorrow 15:00
+- "每周日上午10点送女儿画画" → action: ADD_REMINDER, recurrence: "weekly:0", datetime: next Sunday 10:00
+- "每天早上8点吃药" → action: ADD_REMINDER, recurrence: "daily", datetime: tomorrow 08:00
+- "买苹果和两盒牛奶" → action: ADD_SHOPPING, items: [{"name": "苹果", "category": "果蔬"}, {"name": "牛奶", "category": "乳制品"}]
+- "记录一下：大门密码是 2580#" → action: ADD_NOTE, title: "🔑 大门密码", content: "2580#", type: "sticky", tags: ["密码"], color_theme: "amber"
+- "旅行打包清单：牙刷、充电线、护照" → action: ADD_NOTE, title: "🎒 旅行打包清单", content: "- 牙刷\n- 充电线\n- 护照", type: "checklist", tags: ["旅行", "清单"], color_theme: "cyan"
+- "家里wifi密码是多少？" → action: QUERY_KNOWLEDGE, query: "家里wifi密码是多少？"
+- "我之前记录过关于王总会议的什么吗？" → action: QUERY_KNOWLEDGE, query: "我之前记录过关于王总会议的什么吗？"
+- "下周我有什么安排？" → action: QUERY_KNOWLEDGE, query: "下周我有什么安排？"
 
 Rules:
 - Respond in the SAME LANGUAGE the user used
-- Parse relative dates: "明天" = tomorrow, "下周三" = next Wednesday, "今天下午3点" = today 3pm
-- For recurring reminders, set datetime to the NEXT occurrence
-- If no time specified, datetime = null
-- Split comma/、-separated shopping items into individual entries
+- Route questions/queries about their recorded details, passwords, wifi, diary, schedules, or past meetings to QUERY_KNOWLEDGE
 - ONLY output valid JSON
 
 Shopping categories (MUST use one of these exact values):
 Grocery categories (日常超市):
-- "果蔬" = fruits, vegetables, salad, herbs (Frukt & Grönt)
-- "肉类" = meat, poultry, minced meat (Kött & Fågel)
-- "鱼虾海鲜" = fish, shrimp, seafood (Fisk & Skaldjur)
-- "乳制品" = milk, cheese, yogurt, cream, butter (Mejeri)
-- "蛋类" = eggs (Ägg)
-- "面包烘焙" = bread, pastries, flour, baking (Bröd & Bageri)
-- "冷冻食品" = frozen meals, ice cream, frozen vegetables (Fryst)
-- "饮料" = juice, soda, water, coffee, tea (Drycker)
-- "零食" = chips, candy, chocolate, nuts (Snacks & Godis)
-- "调味品" = oil, vinegar, spices, soy sauce, ketchup (Kryddor & Såser)
-- "粮油干货" = rice, pasta, noodles, canned food, cereal (Skafferi)
-- "家用日化" = detergent, soap, toilet paper, cleaning (Hem & Hushåll)
-- "个护" = shampoo, toothpaste, skincare (Hygien)
-- "婴幼儿" = baby food, diapers (Baby)
-- "宠物" = pet food, pet supplies (Husdjur)
+- "果蔬" = fruits, vegetables, salad, herbs
+- "肉类" = meat, poultry, minced meat
+- "鱼虾海鲜" = fish, shrimp, seafood
+- "乳制品" = milk, cheese, yogurt, cream, butter
+- "蛋类" = eggs
+- "面包烘焙" = bread, pastries, flour, baking
+- "冷冻食品" = frozen meals, ice cream, frozen vegetables
+- "饮料" = juice, soda, water, coffee, tea
+- "零食" = chips, candy, chocolate, nuts
+- "调味品" = oil, vinegar, spices, soy sauce, ketchup
+- "粮油干货" = rice, pasta, noodles, canned food, cereal
+- "家用日化" = detergent, soap, toilet paper, cleaning
+- "个护" = shampoo, toothpaste, skincare
+- "婴幼儿" = baby food, diapers
+- "宠物" = pet food, pet supplies
 Non-grocery categories (非日常用品):
 - "电子产品" = electronics, cables, batteries
 - "家具家居" = furniture, decoration, storage
@@ -233,6 +240,20 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case "ADD_NOTE": {
+        const { title, content, tags, type, color_theme } = result.data;
+        await supabase.from("notes").insert({
+          title: title || "无标题记事",
+          content: content || "",
+          tags: tags || [],
+          type: type || "sticky",
+          color_theme: color_theme || "indigo",
+          is_pinned: false,
+          user_id: userId,
+        });
+        break;
+      }
+
       case "COMPLETE_REMINDER": {
         const query = result.data.query?.toLowerCase() || "";
         const { data: reminders } = await supabase
@@ -302,6 +323,87 @@ Deno.serve(async (req: Request) => {
         if (match) {
           await supabase.from("shopping_items").delete().eq("id", match.id);
         }
+        break;
+      }
+
+      case "DELETE_NOTE": {
+        const query = result.data.query?.toLowerCase() || "";
+        const { data: notes } = await supabase
+          .from("notes")
+          .select("*")
+          .eq("user_id", userId);
+
+        const match = notes?.find((n: { title: string; content: string }) =>
+          n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
+        );
+        if (match) {
+          await supabase.from("notes").delete().eq("id", match.id);
+        }
+        break;
+      }
+
+      case "QUERY_KNOWLEDGE": {
+        const queryText = result.data.query || message.input;
+
+        // 1. Fetch user's knowledge base (all notes and reminders)
+        const [notesRes, remindersRes] = await Promise.all([
+          supabase.from("notes").select("title, content, tags").eq("user_id", userId),
+          supabase.from("reminders").select("title, datetime, notes").eq("user_id", userId),
+        ]);
+
+        const notes = notesRes.data || [];
+        const reminders = remindersRes.data || [];
+
+        // 2. Format knowledge base as context string
+        const contextStr = [
+          "Here is the user's personal database context:",
+          "=== NOTES ===",
+          notes.map((n, i) => `[Note #${i+1}] Title: "${n.title}"\nTags: ${JSON.stringify(n.tags)}\nContent:\n${n.content}`).join("\n\n"),
+          "=== REMINDERS & SCHEDULES ===",
+          reminders.map((r, i) => `[Reminder #${i+1}] Title: "${r.title}"\nTime: ${r.datetime || "No time specified"}\nNotes: ${r.notes || "None"}`).join("\n\n"),
+        ].join("\n\n");
+
+        // 3. Ask Gemini to answer the user's question using this context
+        const RAG_SYSTEM_PROMPT = `You are R2D's semantic search and question answering engine.
+Answer the user's question based strictly on the provided user database context.
+Be direct, helpful, and answer in a friendly, conversational tone in the user's language.
+If the database context does not contain the answer, politely say so. Do not hallucinate or make up facts.`;
+
+        const responseRAG = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [
+            { text: contextStr },
+            { text: `User question: "${queryText}"` }
+          ],
+          config: {
+            systemInstruction: RAG_SYSTEM_PROMPT,
+            temperature: 0.2,
+            maxOutputTokens: 800,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        });
+
+        let answer = "";
+        try {
+          answer = responseRAG.text?.trim() || "";
+        } catch {
+          const parts = responseRAG?.candidates?.[0]?.content?.parts;
+          if (parts) {
+            answer = parts
+              .filter((p: any) => p.text && !p.thought)
+              .map((p: any) => p.text)
+              .join("")
+              .trim();
+          }
+        }
+
+        // 4. Update the result data with the generated answer
+        result.data = {
+          query: queryText,
+          answer: answer || "未找到相关记录。"
+        };
+        // Update confirmation message
+        result.message = answer || "查询完成";
         break;
       }
 

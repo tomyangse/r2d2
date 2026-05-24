@@ -8,11 +8,13 @@ export const useStore = create((set, get) => ({
   activeTab: 'all',
   reminders: [],
   shoppingItems: [],
+  notes: [],
   messages: [],
   isProcessing: false,
   toast: null,
   showCompleted: false,
   realtimeChannels: [],
+  ragAnswer: null,
 
   // --- Auth ---
   setUser: (user) => set({ user }),
@@ -34,12 +36,16 @@ export const useStore = create((set, get) => ({
       user: null,
       reminders: [],
       shoppingItems: [],
+      notes: [],
       messages: [],
     });
   },
 
   // --- Tab ---
   setActiveTab: (tab) => set({ activeTab: tab }),
+
+  // --- RAG Q&A ---
+  setRagAnswer: (ragAnswer) => set({ ragAnswer }),
 
   // --- Toast ---
   showToast: (type, message, onUndo = null) => {
@@ -113,16 +119,18 @@ export const useStore = create((set, get) => ({
 
   loadAll: async () => {
     try {
-      const [remindersRes, shoppingRes, messagesRes] = await Promise.all([
+      const [remindersRes, shoppingRes, messagesRes, notesRes] = await Promise.all([
         supabase.from('reminders').select('*').order('created_at', { ascending: false }),
         supabase.from('shopping_items').select('*').order('created_at', { ascending: false }),
         supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('notes').select('*').order('created_at', { ascending: false }),
       ]);
 
       const updates = {};
       if (remindersRes.data) updates.reminders = remindersRes.data;
       if (shoppingRes.data) updates.shoppingItems = shoppingRes.data;
       if (messagesRes.data) updates.messages = messagesRes.data;
+      if (notesRes.data) updates.notes = notesRes.data;
 
       set(updates);
     } catch (e) {
@@ -149,10 +157,19 @@ export const useStore = create((set, get) => ({
             ),
           }));
 
-          // When a message completes, show toast and refresh data
+          // When a message completes, show toast/answer and refresh data
           if (updated.status === 'done' && updated.result) {
             const msg = updated.result.message || '处理完成';
-            get().showToast('success', msg);
+            if (updated.result.action === 'QUERY_KNOWLEDGE' && updated.result.data) {
+              set({
+                ragAnswer: {
+                  query: updated.result.data.query,
+                  answer: updated.result.data.answer,
+                }
+              });
+            } else {
+              get().showToast('success', msg);
+            }
             // Refresh affected data
             get().refreshData();
           } else if (updated.status === 'error') {
@@ -186,8 +203,20 @@ export const useStore = create((set, get) => ({
       )
       .subscribe();
 
+    // Notes channel — live updates
+    const notesChannel = supabase
+      .channel('notes-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notes' },
+        () => {
+          get().refreshNotes();
+        }
+      )
+      .subscribe();
+
     set({
-      realtimeChannels: [messagesChannel, remindersChannel, shoppingChannel],
+      realtimeChannels: [messagesChannel, remindersChannel, shoppingChannel, notesChannel],
     });
   },
 
@@ -202,7 +231,7 @@ export const useStore = create((set, get) => ({
   // ==================================
 
   refreshData: async () => {
-    await Promise.all([get().refreshReminders(), get().refreshShopping()]);
+    await Promise.all([get().refreshReminders(), get().refreshShopping(), get().refreshNotes()]);
   },
 
   refreshReminders: async () => {
@@ -219,6 +248,14 @@ export const useStore = create((set, get) => ({
       .select('*')
       .order('created_at', { ascending: false });
     if (data) set({ shoppingItems: data });
+  },
+
+  refreshNotes: async () => {
+    const { data } = await supabase
+      .from('notes')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) set({ notes: data });
   },
 
   // ==================================
@@ -297,4 +334,83 @@ export const useStore = create((set, get) => ({
   },
 
   toggleShowCompleted: () => set(state => ({ showCompleted: !state.showCompleted })),
+
+  // --- Notes CRUD ---
+  togglePinNote: async (id) => {
+    const note = get().notes.find(n => n.id === id);
+    if (!note) return;
+
+    const newVal = !note.is_pinned;
+    // Optimistic update
+    set(state => ({
+      notes: state.notes.map(n =>
+        n.id === id ? { ...n, is_pinned: newVal } : n
+      ),
+    }));
+
+    await supabase.from('notes').update({ is_pinned: newVal }).eq('id', id);
+  },
+
+  updateNote: async (id, title, content) => {
+    // Optimistic update
+    set(state => ({
+      notes: state.notes.map(n =>
+        n.id === id ? { ...n, title, content, updated_at: new Date().toISOString() } : n
+      ),
+    }));
+
+    await supabase.from('notes').update({ title, content, updated_at: new Date().toISOString() }).eq('id', id);
+    get().showToast('success', '已保存修改');
+  },
+
+  deleteNote: async (id) => {
+    // Optimistic update
+    set(state => ({
+      notes: state.notes.filter(n => n.id !== id),
+    }));
+    await supabase.from('notes').delete().eq('id', id);
+    get().showToast('success', '记事已删除');
+  },
+
+  toggleNoteChecklistItem: async (id, itemIndex) => {
+    const note = get().notes.find(n => n.id === id);
+    if (!note || note.type !== 'checklist') return;
+
+    // Content represents markdown-style checklists: e.g. "- [ ] item" or "- [x] item"
+    const lines = note.content.split('\n');
+    let currentIndex = 0;
+    
+    const newLines = lines.map(line => {
+      if (line.trim().startsWith('- [ ]') || line.trim().startsWith('- [x]')) {
+        if (currentIndex === itemIndex) {
+          currentIndex++;
+          if (line.includes('- [ ]')) {
+            return line.replace('- [ ]', '- [x]');
+          } else {
+            return line.replace('- [x]', '- [px]');
+          }
+        }
+        currentIndex++;
+      }
+      return line;
+    });
+
+    const finalLines = newLines.map(line => {
+      if (line.includes('- [px]')) {
+        return line.replace('- [px]', '- [ ]');
+      }
+      return line;
+    });
+
+    const newContent = finalLines.join('\n');
+
+    // Optimistic update
+    set(state => ({
+      notes: state.notes.map(n =>
+        n.id === id ? { ...n, content: newContent } : n
+      ),
+    }));
+
+    await supabase.from('notes').update({ content: newContent }).eq('id', id);
+  },
 }));

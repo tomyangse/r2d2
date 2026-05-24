@@ -2,10 +2,11 @@ import { Plus, LogOut } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 export default function Header() {
-  const { activeTab, setActiveTab, reminders, shoppingItems, user, signOut } = useStore();
+  const { activeTab, setActiveTab, reminders, shoppingItems, notes = [], user, signOut } = useStore();
 
   const pendingReminders = reminders.filter(r => !r.completed).length;
   const pendingItems = shoppingItems.filter(i => !i.checked).length;
+  const notesCount = notes.length;
 
   return (
     <header className="header">
@@ -62,6 +63,14 @@ export default function Header() {
         >
           <span>购物</span>
           <span className="header__tab-badge">{pendingItems}</span>
+        </button>
+        <button
+          className={`header__tab ${activeTab === 'notes' ? 'header__tab--active' : ''}`}
+          onClick={() => setActiveTab('notes')}
+          aria-label="Notes tab"
+        >
+          <span>记事</span>
+          {notesCount > 0 && <span className="header__tab-badge">{notesCount}</span>}
         </button>
       </nav>
     </header>

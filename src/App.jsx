@@ -8,6 +8,8 @@ import MessageStatus from './components/MessageStatus';
 import Toast from './components/Toast';
 import AuthPage from './components/AuthPage';
 import PushBanner from './components/PushBanner';
+import NotesView from './components/NotesView';
+import AiAnswerCard from './components/AiAnswerCard';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 
@@ -68,6 +70,8 @@ export default function App() {
         return <RemindersView />;
       case 'shopping':
         return <ShoppingList />;
+      case 'notes':
+        return <NotesView />;
       case 'all':
       default:
         return (
@@ -75,6 +79,8 @@ export default function App() {
             <RemindersView />
             <hr className="view-divider" />
             <ShoppingList />
+            <hr className="view-divider" />
+            <NotesView />
           </>
         );
     }
@@ -84,6 +90,7 @@ export default function App() {
     <div className="app">
       <Header />
       <PushBanner />
+      <AiAnswerCard />
       {(activeTab === 'all' || activeTab === 'reminders') && <NextUpCard />}
       <main className="main-content">
         <MessageStatus messages={pendingMessages} />
