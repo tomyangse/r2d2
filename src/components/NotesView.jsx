@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pin, Trash2, Copy, Edit3, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import NoteDetailModal from './NoteDetailModal';
 
 export default function NotesView() {
   const {
@@ -17,6 +18,7 @@ export default function NotesView() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [expandedIds, setExpandedIds] = useState({});
+  const [selectedNote, setSelectedNote] = useState(null);
 
   // Get all unique tags from notes
   const allTags = ['全部', ...new Set(notes.flatMap(note => note.tags || []))];
@@ -160,7 +162,9 @@ export default function NotesView() {
       <div
         key={note.id}
         className={`note-card ${themeClass} ${note.is_pinned ? 'note-card--pinned' : ''} note-card--type-${note.type}`}
+        onClick={() => !isEditing && setSelectedNote(note)}
         onDoubleClick={(e) => !isEditing && startEditing(note, e)}
+        style={{ cursor: isEditing ? 'default' : 'pointer' }}
       >
         {/* Card Header */}
         <div className="note-card__header">
@@ -327,6 +331,14 @@ export default function NotesView() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Note Detail Modal */}
+      {selectedNote && (
+        <NoteDetailModal
+          note={notes.find(n => n.id === selectedNote.id) || selectedNote}
+          onClose={() => setSelectedNote(null)}
+        />
       )}
     </div>
   );

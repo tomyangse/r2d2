@@ -32,6 +32,7 @@ Response format (valid JSON only, no markdown):
     "title": "string (for reminders, and also for notes. For notes, generate a short descriptive title)",
     "datetime": "ISO 8601 string or null (for reminders - the NEXT occurrence time)",
     "notes": "string or null (for reminders)",
+    "location": "string or null (for reminders - extract any location/address/place mentioned. Keep it as a clean address or place name suitable for map search, e.g. 'Alexanderplatz, Berlin' or '北京西站' or '123 Main St, NYC')",
     "recurrence": "string or null (for reminders - recurrence pattern)",
     "items": [{"name": "string", "category": "string"}] (for shopping - MUST assign a category),
     "query": "string (for complete/delete actions, and for QUERY_KNOWLEDGE - natural language query)",
@@ -60,6 +61,9 @@ Examples:
 - "家里wifi密码是多少？" → action: QUERY_KNOWLEDGE, query: "家里wifi密码是多少？"
 - "我之前记录过关于王总会议的什么吗？" → action: QUERY_KNOWLEDGE, query: "我之前记录过关于王总会议的什么吗？"
 - "下周我有什么安排？" → action: QUERY_KNOWLEDGE, query: "下周我有什么安排？"
+- "明天下午3点在星巴克见客户" → action: ADD_REMINDER, title: "见客户", datetime: "...", location: "星巴克"
+- "6月1号带孩子去Alexanderplatz看牙医" → action: ADD_REMINDER, title: "带孩子看牙医", datetime: "...", location: "Alexanderplatz"
+- "remind me dentist at Schönhauser Allee 10 at 3pm" → action: ADD_REMINDER, title: "Dentist", datetime: "...", location: "Schönhauser Allee 10"
 
 Rules:
 - Respond in the SAME LANGUAGE the user used
@@ -213,11 +217,12 @@ Deno.serve(async (req: Request) => {
     // 4. Execute the action (attach user_id to all inserts)
     switch (result.action) {
       case "ADD_REMINDER": {
-        const { title, datetime, notes, recurrence } = result.data;
+        const { title, datetime, notes, recurrence, location } = result.data;
         await supabase.from("reminders").insert({
           title,
           datetime: datetime || null,
           notes: notes || null,
+          location: location || null,
           recurrence: recurrence || null,
           completed: false,
           user_id: userId,

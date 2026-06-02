@@ -15,6 +15,7 @@ export const useStore = create((set, get) => ({
   showCompleted: false,
   realtimeChannels: [],
   ragAnswer: null,
+  telegramStatus: null,
 
   // --- Auth ---
   setUser: (user) => set({ user }),
@@ -312,6 +313,25 @@ export const useStore = create((set, get) => ({
     await supabase.from('reminders').delete().eq('id', id);
   },
 
+  updateReminder: async (id, updates) => {
+    // Optimistic update
+    set(state => ({
+      reminders: state.reminders.map(r =>
+        r.id === id ? { ...r, ...updates } : r
+      ),
+    }));
+
+    const { error } = await supabase.from('reminders').update(updates).eq('id', id);
+    if (error) {
+      console.error('Update reminder error:', error);
+      get().showToast('error', '更新失败，请重试');
+      // Revert on error
+      get().refreshReminders();
+    } else {
+      get().showToast('success', '日程已更新');
+    }
+  },
+
   toggleShoppingItem: async (id) => {
     const item = get().shoppingItems.find(i => i.id === id);
     if (!item) return;
@@ -412,5 +432,92 @@ export const useStore = create((set, get) => ({
     }));
 
     await supabase.from('notes').update({ content: newContent }).eq('id', id);
+  },
+
+  // --- Telegram Binding ---
+  loadTelegramStatus: async () => {
+    const user = get().user;
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('telegram_chats')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    set({
+      telegramStatus: data
+        ? { linked: true, chat_id: data.chat_id, username: data.username, first_name: data.first_name }
+        : { linked: false },
+    });
+  },
+
+  linkTelegram: async (code) => {
+    const user = get().user;
+    if (!user) return;
+
+    try {
+      // 1. Find the link code
+      const { data: linkCode, error: findError } = await supabase
+        .from('telegram_link_codes')
+        .select('*')
+        .eq('code', code)
+        .eq('used', false)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle();
+
+      if (findError || !linkCode) {
+        get().showToast('error', '验证码无效或已过期，请重新获取');
+        return;
+      }
+
+      // 2. Create the binding
+      const { error: insertError } = await supabase
+        .from('telegram_chats')
+        .upsert({
+          user_id: user.id,
+          chat_id: linkCode.chat_id,
+          username: linkCode.username,
+          first_name: linkCode.first_name,
+          is_active: true,
+          linked_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+
+      if (insertError) {
+        console.error('Link telegram error:', insertError);
+        get().showToast('error', '绑定失败，请重试');
+        return;
+      }
+
+      // 3. Mark code as used
+      await supabase
+        .from('telegram_link_codes')
+        .update({ used: true })
+        .eq('id', linkCode.id);
+
+      get().showToast('success', '🎉 Telegram 绑定成功！');
+      get().loadTelegramStatus();
+    } catch (e) {
+      console.error('Link telegram error:', e);
+      get().showToast('error', '绑定失败，请重试');
+    }
+  },
+
+  unlinkTelegram: async () => {
+    const user = get().user;
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('telegram_chats')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (error) {
+      get().showToast('error', '解绑失败');
+      return;
+    }
+
+    set({ telegramStatus: { linked: false } });
+    get().showToast('success', 'Telegram 已解绑');
   },
 }));

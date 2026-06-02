@@ -1,8 +1,11 @@
-import { Plus, LogOut } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, LogOut, Send } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import TelegramSettings from './TelegramSettings';
 
 export default function Header() {
   const { activeTab, setActiveTab, reminders, shoppingItems, notes = [], user, signOut } = useStore();
+  const [showTelegram, setShowTelegram] = useState(false);
 
   const pendingReminders = reminders.filter(r => !r.completed).length;
   const pendingItems = shoppingItems.filter(i => !i.checked).length;
@@ -26,10 +29,17 @@ export default function Header() {
             <LogOut size={15} />
           </button>
           <button
+            className="header__telegram-btn"
+            onClick={() => setShowTelegram(true)}
+            aria-label="Telegram settings"
+            title="Telegram 助手"
+          >
+            <Send size={15} />
+          </button>
+          <button
             className="header__add-btn"
             aria-label="Add new"
             onClick={() => {
-              // Focus the input bar
               const input = document.querySelector('.input-bar__input');
               if (input) input.focus();
             }}
@@ -38,6 +48,8 @@ export default function Header() {
           </button>
         </div>
       </div>
+
+      {showTelegram && <TelegramSettings onClose={() => setShowTelegram(false)} />}
 
       {/* Tab Bar */}
       <nav className="header__tabs">

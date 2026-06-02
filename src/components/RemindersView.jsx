@@ -1,7 +1,8 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, differenceInMinutes } from 'date-fns';
-import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, ArrowRight, ChevronDown } from 'lucide-react';
+import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, ArrowRight, ChevronDown, MapPin } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import EditReminderModal from './EditReminderModal';
 
 const RECURRENCE_LABELS = {
   daily: '每天',
@@ -115,8 +116,9 @@ const GROUP_LABELS = {
  * - tomorrow: no check circle, only menu
  */
 function ReminderItem({ reminder, groupKey }) {
-  const { toggleReminder, deleteReminder, postponeReminder, showToast } = useStore();
+  const { toggleReminder, deleteReminder, postponeReminder } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const menuRef = useRef(null);
 
   const timeStr = reminder.datetime
@@ -127,9 +129,9 @@ function ReminderItem({ reminder, groupKey }) {
   const isFuture = groupKey === 'tomorrow' || (groupKey === 'today' && !isPending);
   const status = !reminder.completed ? getStatusBadge(reminder.datetime, groupKey) : null;
 
-  const handleComingSoon = () => {
+  const handleEdit = () => {
     setMenuOpen(false);
-    showToast('success', '📋 功能开发中，敬请期待');
+    setEditOpen(true);
   };
 
   // Close menu on outside click
@@ -173,6 +175,17 @@ function ReminderItem({ reminder, groupKey }) {
         {reminder.notes && (
           <div className="reminder-item__notes">{reminder.notes}</div>
         )}
+        {reminder.location && (
+          <a
+            className="reminder-item__location"
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reminder.location)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <MapPin size={12} />
+            <span>{reminder.location}</span>
+          </a>
+        )}
       </div>
       <div className="reminder-item__actions">
         {/* Show check circle for pending items & today's items, but NOT for tomorrow */}
@@ -206,7 +219,7 @@ function ReminderItem({ reminder, groupKey }) {
                     <ArrowRight size={14} />
                     <span>移到明天</span>
                   </button>
-                  <button className="dropdown-menu__item" onClick={handleComingSoon}>
+                  <button className="dropdown-menu__item" onClick={handleEdit}>
                     <Clock size={14} />
                     <span>改时间</span>
                   </button>
@@ -221,11 +234,11 @@ function ReminderItem({ reminder, groupKey }) {
               ) : (
                 <>
                   {/* Future item menu */}
-                  <button className="dropdown-menu__item" onClick={handleComingSoon}>
+                  <button className="dropdown-menu__item" onClick={handleEdit}>
                     <Pencil size={14} />
                     <span>编辑</span>
                   </button>
-                  <button className="dropdown-menu__item" onClick={handleComingSoon}>
+                  <button className="dropdown-menu__item" onClick={handleEdit}>
                     <Clock size={14} />
                     <span>改时间</span>
                   </button>
@@ -242,6 +255,9 @@ function ReminderItem({ reminder, groupKey }) {
           )}
         </div>
       </div>
+      {editOpen && (
+        <EditReminderModal reminder={reminder} onClose={() => setEditOpen(false)} />
+      )}
     </div>
   );
 }
@@ -251,8 +267,9 @@ function ReminderItem({ reminder, groupKey }) {
  * Shows recurrence label text instead of delete button for recurring items.
  */
 function CompactReminderItem({ reminder }) {
-  const { deleteReminder, showToast } = useStore();
+  const { deleteReminder } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const menuRef = useRef(null);
 
   let dateLabel = '';
@@ -274,9 +291,9 @@ function CompactReminderItem({ reminder }) {
 
   const recurrenceLabel = getRecurrenceLabel(reminder.recurrence);
 
-  const handleComingSoon = () => {
+  const handleEdit = () => {
     setMenuOpen(false);
-    showToast('success', '📋 功能开发中，敬请期待');
+    setEditOpen(true);
   };
 
   // Close menu on outside click
@@ -296,6 +313,17 @@ function CompactReminderItem({ reminder }) {
       {dateLabel && <span className="compact-item__date">{dateLabel}</span>}
       {timeLabel && <span className="compact-item__time">{timeLabel}</span>}
       <span className="compact-item__title">{reminder.title}</span>
+      {reminder.location && (
+        <a
+          className="compact-item__location"
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(reminder.location)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+        >
+          <MapPin size={10} />
+        </a>
+      )}
       {reminder.recurrence && (
         <>
           <Repeat size={12} className="compact-item__recur" />
@@ -314,11 +342,11 @@ function CompactReminderItem({ reminder }) {
           <div className="dropdown-menu">
             {reminder.recurrence ? (
               <>
-                <button className="dropdown-menu__item" onClick={handleComingSoon}>
+                <button className="dropdown-menu__item" onClick={handleEdit}>
                   <Pencil size={14} />
                   <span>编辑本次</span>
                 </button>
-                <button className="dropdown-menu__item" onClick={handleComingSoon}>
+                <button className="dropdown-menu__item" onClick={handleEdit}>
                   <Repeat size={14} />
                   <span>编辑整个重复</span>
                 </button>
@@ -332,7 +360,7 @@ function CompactReminderItem({ reminder }) {
               </>
             ) : (
               <>
-                <button className="dropdown-menu__item" onClick={handleComingSoon}>
+                <button className="dropdown-menu__item" onClick={handleEdit}>
                   <Pencil size={14} />
                   <span>编辑</span>
                 </button>
@@ -348,6 +376,9 @@ function CompactReminderItem({ reminder }) {
           </div>
         )}
       </div>
+      {editOpen && (
+        <EditReminderModal reminder={reminder} onClose={() => setEditOpen(false)} />
+      )}
     </div>
   );
 }
