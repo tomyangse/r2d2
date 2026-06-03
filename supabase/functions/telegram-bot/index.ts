@@ -38,6 +38,49 @@ async function sendTelegramMessage(chatId: number, text: string): Promise<void> 
 }
 
 // ============================================
+// Telegram File Download Helper
+// ============================================
+
+/**
+ * Download a file from Telegram servers and return as base64
+ */
+async function downloadTelegramFile(fileId: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    // 1. Get file path from Telegram
+    const fileRes = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+    if (!fileRes.ok) return null;
+
+    const fileData = await fileRes.json();
+    const filePath = fileData?.result?.file_path;
+    if (!filePath) return null;
+
+    // 2. Download the file
+    const downloadUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+    const downloadRes = await fetch(downloadUrl);
+    if (!downloadRes.ok) return null;
+
+    // 3. Convert to base64
+    const arrayBuffer = await downloadRes.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < uint8Array.length; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    const base64 = btoa(binary);
+
+    // Telegram voice messages are OGG format
+    const mimeType = filePath.endsWith(".oga") || filePath.endsWith(".ogg")
+      ? "audio/ogg"
+      : "audio/mpeg";
+
+    return { base64, mimeType };
+  } catch (err) {
+    console.error("Failed to download Telegram file:", err);
+    return null;
+  }
+}
+
+// ============================================
 // Command Handlers
 // ============================================
 
@@ -221,6 +264,95 @@ async function handleTextMessage(chatId: number, text: string): Promise<void> {
   }
 }
 
+/**
+ * Handle a voice message:
+ * 1. Download voice file from Telegram
+ * 2. Convert to base64
+ * 3. Send to process-message with audio parameter
+ */
+async function handleVoiceMessage(chatId: number, fileId: string): Promise<void> {
+  // 1. Look up linked user
+  const { data: chat } = await supabase
+    .from("telegram_chats")
+    .select("user_id, is_active")
+    .eq("chat_id", chatId)
+    .single();
+
+  if (!chat) {
+    await sendTelegramMessage(chatId, `🔒 请先绑定 R2D 账户。\n发送 /start 获取验证码。`);
+    return;
+  }
+
+  if (!chat.is_active) {
+    await sendTelegramMessage(chatId, `⏸️ 你的 Telegram 连接已暂停，请在网页端重新启用。`);
+    return;
+  }
+
+  // 2. Download voice file
+  const audioData = await downloadTelegramFile(fileId);
+  if (!audioData) {
+    await sendTelegramMessage(chatId, "❌ 语音文件下载失败，请重试。");
+    return;
+  }
+
+  console.log(`Voice file downloaded: ${audioData.mimeType}, ${audioData.base64.length} chars base64`);
+
+  // 3. Insert message
+  const { data: newMsg, error: insertErr } = await supabase
+    .from("messages")
+    .insert({
+      input: "[语音消息]",
+      source: "telegram",
+      status: "pending",
+      user_id: chat.user_id,
+    })
+    .select("id")
+    .single();
+
+  if (insertErr || !newMsg) {
+    console.error("Failed to insert voice message:", insertErr);
+    await sendTelegramMessage(chatId, "❌ 消息处理失败，请稍后重试。");
+    return;
+  }
+
+  // 4. Invoke process-message with audio data
+  try {
+    const fnUrl = `${supabaseUrl}/functions/v1/process-message`;
+    const invokeRes = await fetch(fnUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify({
+        message_id: newMsg.id,
+        timezone: "Europe/Berlin",
+        audio: { base64: audioData.base64, mimeType: audioData.mimeType },
+      }),
+    });
+
+    if (!invokeRes.ok) {
+      const errBody = await invokeRes.text();
+      console.error("process-message invoke failed (voice):", invokeRes.status, errBody);
+      await sendTelegramMessage(chatId, "❌ 语音处理失败，请稍后重试。");
+      return;
+    }
+
+    const responseData = await invokeRes.json();
+    console.log("process-message voice response:", JSON.stringify(responseData).substring(0, 300));
+
+    const replyMessage = responseData?.result?.message;
+    if (replyMessage) {
+      await sendTelegramMessage(chatId, replyMessage);
+    } else {
+      await sendTelegramMessage(chatId, "✅ 语音已处理完成。");
+    }
+  } catch (invokeErr) {
+    console.error("process-message voice invocation error:", invokeErr);
+    await sendTelegramMessage(chatId, "❌ 语音处理失败，请稍后重试。");
+  }
+}
+
 // ============================================
 // Main Webhook Handler
 // ============================================
@@ -237,16 +369,32 @@ Deno.serve(async (req: Request) => {
 
     // Only handle text messages
     const message = update.message;
-    if (!message?.text) {
+    if (!message) {
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const chatId: number = message.chat.id;
-    const text: string = message.text.trim();
     const username: string | undefined = message.from?.username;
     const firstName: string | undefined = message.from?.first_name;
+
+    // Handle voice messages
+    if (message.voice) {
+      await handleVoiceMessage(chatId, message.voice.file_id);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Skip non-text messages (stickers, photos without caption, etc.)
+    if (!message.text) {
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const text: string = message.text.trim();
 
     // Route commands
     if (text === "/start" || text.startsWith("/start ")) {
