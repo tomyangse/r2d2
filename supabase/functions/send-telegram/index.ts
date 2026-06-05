@@ -95,6 +95,78 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const url = new URL(req.url);
+    const fix = url.searchParams.get("fix") === "1";
+    if (fix) {
+      const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+      if (dbUrl) {
+        const { Client } = await import("https://deno.land/x/postgres@v0.17.0/mod.ts");
+        const client = new Client(dbUrl);
+        await client.connect();
+        
+        console.log("Unscheduling old telegram-reminders cron...");
+        try {
+          await client.queryArray("SELECT cron.unschedule('send-telegram-reminders')");
+        } catch (e) {
+          console.log("Unschedule failed (might not exist):", e);
+        }
+
+        console.log("Scheduling new telegram-reminders cron with supabase_anon_key...");
+        await client.queryArray(`
+          SELECT cron.schedule(
+            'send-telegram-reminders',
+            '* * * * *',
+            $$
+            SELECT net.http_post(
+              url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'project_url' LIMIT 1)
+                     || '/functions/v1/send-telegram',
+              headers := jsonb_build_object(
+                'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'supabase_anon_key' LIMIT 1),
+                'Content-Type', 'application/json'
+              ),
+              body := '{}'::jsonb
+            );
+            $$
+          );
+        `);
+        
+        await client.end();
+        return new Response(JSON.stringify({ status: "fixed" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } else {
+        return new Response(JSON.stringify({ error: "SUPABASE_DB_URL env var not found" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    const isTest = url.searchParams.get("test") === "1";
+
+    let testReminder: any = null;
+    if (isTest) {
+      console.log("Setting up test reminder...");
+      const futureTime = new Date(Date.now() + 3 * 60 * 1000).toISOString();
+      const { data, error } = await supabase
+        .from("reminders")
+        .insert({
+          title: "🔔 测试提前 3 分钟紧急提醒",
+          datetime: futureTime,
+          completed: false,
+          user_id: "ead3dc5c-63b2-458a-97de-2818a90599b9"
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error("Failed to insert test reminder:", error);
+      } else {
+        testReminder = data;
+        console.log("Test reminder inserted:", testReminder);
+      }
+    }
+
     const now = new Date();
     const windowEnd = new Date(now.getTime() + NOTIFY_WINDOW_MINUTES * 60 * 1000);
 
@@ -319,9 +391,92 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
+ 
+    if (testReminder) {
+      console.log("Cleaning up test reminder:", testReminder.id);
+      await supabase.from("reminders").delete().eq("id", testReminder.id);
+    }
+
+    const showDebug = url.searchParams.get("debug") === "1" || isTest;
+    let debugInfo: any = null;
+
+    if (showDebug) {
+      const { data: allReminders } = await supabase
+        .from("reminders")
+        .select("id, title, datetime, completed, user_id, telegram_notified_30m_at, telegram_notified_3m_at")
+        .eq("completed", false);
+
+      let cronHistory: any[] = [];
+      let cronJobs: any[] = [];
+      try {
+        const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+        if (dbUrl) {
+          const { Client } = await import("https://deno.land/x/postgres@v0.17.0/mod.ts");
+          const client = new Client(dbUrl);
+          await client.connect();
+          
+          // Query history
+          const resHistory = await client.queryObject(`
+            SELECT jobid, runid, start_time, end_time, status, return_message 
+            FROM cron.job_run_details 
+            ORDER BY start_time DESC 
+            LIMIT 10
+          `);
+          cronHistory = resHistory.rows.map((row: any) => {
+            const cleanRow: any = {};
+            for (const [key, val] of Object.entries(row)) {
+              cleanRow[key] = typeof val === "bigint" ? Number(val) : val;
+            }
+            return cleanRow;
+          });
+
+          // Query jobs
+          const resJobs = await client.queryObject(`
+            SELECT jobid, schedule, command, active, jobname 
+            FROM cron.job
+          `);
+          cronJobs = resJobs.rows.map((row: any) => {
+            const cleanRow: any = {};
+            for (const [key, val] of Object.entries(row)) {
+              cleanRow[key] = typeof val === "bigint" ? Number(val) : val;
+            }
+            return cleanRow;
+          });
+
+          await client.end();
+        } else {
+          cronHistory = [{ error: "SUPABASE_DB_URL env var not found" }];
+        }
+      } catch (err) {
+        console.error("Failed to query cron history:", err);
+        cronHistory = [{ error: String(err) }];
+      }
+
+      debugInfo = {
+        berlinDateStr,
+        berlinHour,
+        chatsCount: chats ? chats.length : 0,
+        chats: chats || [],
+        remindersCount: reminders ? reminders.length : 0,
+        reminders: reminders || [],
+        allRemindersCount: allReminders ? allReminders.length : 0,
+        allReminders: allReminders || [],
+        cronHistory,
+        cronJobs,
+      };
+    }
+
+    const responsePayload: any = {
+      status: "done",
+      sent: sentCount,
+      errors: errorCount,
+    };
+    if (debugInfo) {
+      responsePayload.debug = debugInfo;
+    }
 
     return new Response(
-      JSON.stringify({ status: "done", sent: sentCount, errors: errorCount }),
+      JSON.stringify(responsePayload),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
