@@ -68,25 +68,14 @@ export default function TasksView() {
   }, [tasks, taskActiveDomain]);
 
   // Filter completed tasks to show in the archive list.
-  // We show a completed task if it is completed, AND either:
-  // - It has no parent task (top-level task), OR
-  // - Its parent task is NOT completed (active).
+  // We only show top-level completed tasks at the root of the archive.
+  // Child tasks (both active and completed) are always rendered recursively under their parents.
   const completedTasks = useMemo(() => {
     return tasks.filter(t => {
       const matchDomain = taskActiveDomain === 'personal'
         ? (t.domain === 'personal' || t.domain === 'family')
         : t.domain === 'work';
-      if (!matchDomain || t.status !== 'completed') return false;
-
-      if (t.parent_id) {
-        const parent = tasks.find(pt => pt.id === t.parent_id);
-        if (parent && parent.status === 'completed') {
-          // Parent is also completed, so this child will be shown under its parent in the archive.
-          // Don't show it at the top level of the archive.
-          return false;
-        }
-      }
-      return true;
+      return matchDomain && t.status === 'completed' && !t.parent_id;
     });
   }, [tasks, taskActiveDomain]);
 
@@ -151,14 +140,8 @@ export default function TasksView() {
   };
 
   const renderTaskNode = (t, depth = 0) => {
-    // Only show active child tasks when rendering inside the active list
-    // (If the current task t is completed, show all children; otherwise only active children)
-    const childTasks = tasks.filter(child => {
-      if (t.status === 'completed') {
-        return child.parent_id === t.id;
-      }
-      return child.parent_id === t.id && child.status !== 'completed';
-    });
+    // Show all child tasks recursively under their parents
+    const childTasks = tasks.filter(child => child.parent_id === t.id);
     
     const expanded = isExpanded(t.id);
     const hasChildren = childTasks.length > 0;
