@@ -392,22 +392,26 @@ Deno.serve(async (req: Request) => {
         case "ADD_TASK": {
           const { title, description, domain, project_name, priority, due_date } = act.data;
           let projectId = null;
+          let finalDomain = domain || "personal";
 
           if (project_name) {
             const { data: proj } = await supabase
               .from("projects")
-              .select("id")
+              .select("id, domain")
               .eq("user_id", userId)
               .ilike("title", `%${project_name}%`)
               .limit(1)
               .maybeSingle();
-            if (proj) projectId = proj.id;
+            if (proj) {
+              projectId = proj.id;
+              finalDomain = proj.domain; // Inherit project domain
+            }
           }
 
           await supabase.from("tasks").insert({
             title,
             description: description || null,
-            domain: domain || "personal",
+            domain: finalDomain,
             project_id: projectId,
             priority: priority || "medium",
             due_date: due_date || null,

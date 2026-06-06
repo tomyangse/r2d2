@@ -645,10 +645,16 @@ export const useStore = create((set, get) => ({
     const user = get().user;
     if (!user) return;
 
+    let finalDomain = domain;
+    if (projectId) {
+      const proj = get().projects.find(p => p.id === projectId);
+      if (proj) finalDomain = proj.domain;
+    }
+
     const newTask = {
       title,
       description,
-      domain,
+      domain: finalDomain,
       project_id: projectId,
       priority,
       due_date: dueDate,
@@ -672,11 +678,20 @@ export const useStore = create((set, get) => ({
   },
 
   updateTask: async (id, updates) => {
+    const task = get().tasks.find(t => t.id === id);
+    const currentProjectId = updates.project_id !== undefined ? updates.project_id : (task ? task.project_id : null);
+    
+    let finalUpdates = { ...updates };
+    if (currentProjectId) {
+      const proj = get().projects.find(p => p.id === currentProjectId);
+      if (proj) finalUpdates.domain = proj.domain;
+    }
+
     set(state => ({
-      tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+      tasks: state.tasks.map(t => t.id === id ? { ...t, ...finalUpdates } : t)
     }));
 
-    const { error } = await supabase.from('tasks').update(updates).eq('id', id);
+    const { error } = await supabase.from('tasks').update(finalUpdates).eq('id', id);
     if (error) {
       console.error('Update task error:', error);
       get().showToast('error', '更新任务失败');
