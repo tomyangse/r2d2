@@ -68,10 +68,22 @@ async function downloadTelegramFile(fileId: string): Promise<{ base64: string; m
     }
     const base64 = btoa(binary);
 
-    // Telegram voice messages are OGG format
-    const mimeType = filePath.endsWith(".oga") || filePath.endsWith(".ogg")
-      ? "audio/ogg"
-      : "audio/mpeg";
+    // Resolve mime type based on file path extension
+    let mimeType = "application/octet-stream";
+    const lowerPath = filePath.toLowerCase();
+    if (lowerPath.endsWith(".oga") || lowerPath.endsWith(".ogg")) {
+      mimeType = "audio/ogg";
+    } else if (lowerPath.endsWith(".mp3") || lowerPath.endsWith(".m4a")) {
+      mimeType = "audio/mpeg";
+    } else if (lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) {
+      mimeType = "image/jpeg";
+    } else if (lowerPath.endsWith(".png")) {
+      mimeType = "image/png";
+    } else if (lowerPath.endsWith(".gif")) {
+      mimeType = "image/gif";
+    } else if (lowerPath.endsWith(".webp")) {
+      mimeType = "image/webp";
+    }
 
     return { base64, mimeType };
   } catch (err) {
@@ -353,6 +365,105 @@ async function handleVoiceMessage(chatId: number, fileId: string): Promise<void>
   }
 }
 
+/**
+ * Handle a photo message:
+ * 1. Look up linked user
+ * 2. Download the photo (the largest one in the array)
+ * 3. Insert message
+ * 4. Invoke process-message with image data
+ */
+async function handlePhotoMessage(chatId: number, photoArray: any[], caption?: string): Promise<void> {
+  // 1. Look up linked user
+  const { data: chat } = await supabase
+    .from("telegram_chats")
+    .select("user_id, is_active")
+    .eq("chat_id", chatId)
+    .single();
+
+  if (!chat) {
+    await sendTelegramMessage(chatId, `🔒 请先绑定 R2D 账户。\n发送 /start 获取验证码。`);
+    return;
+  }
+
+  if (!chat.is_active) {
+    await sendTelegramMessage(chatId, `⏸️ 你的 Telegram 连接已暂停，请在网页端重新启用。`);
+    return;
+  }
+
+  // 2. Select the largest photo size
+  const largestPhoto = photoArray[photoArray.length - 1];
+  if (!largestPhoto || !largestPhoto.file_id) {
+    await sendTelegramMessage(chatId, "❌ 无法获取图片信息，请重试。");
+    return;
+  }
+
+  // 3. Download the photo file
+  const imageData = await downloadTelegramFile(largestPhoto.file_id);
+  if (!imageData) {
+    await sendTelegramMessage(chatId, "❌ 图片下载失败，请重试。");
+    return;
+  }
+
+  console.log(`Photo file downloaded: ${imageData.mimeType}, ${imageData.base64.length} chars base64`);
+
+  const textInput = caption ? caption.trim() : "请识别这张图片中的信息";
+
+  // 4. Insert message
+  const { data: newMsg, error: insertErr } = await supabase
+    .from("messages")
+    .insert({
+      input: textInput,
+      source: "telegram",
+      status: "pending",
+      user_id: chat.user_id,
+    })
+    .select("id")
+    .single();
+
+  if (insertErr || !newMsg) {
+    console.error("Failed to insert photo message:", insertErr);
+    await sendTelegramMessage(chatId, "❌ 消息处理失败，请稍后重试。");
+    return;
+  }
+
+  // 5. Invoke process-message with image data
+  try {
+    const fnUrl = `${supabaseUrl}/functions/v1/process-message`;
+    const invokeRes = await fetch(fnUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify({
+        message_id: newMsg.id,
+        timezone: "Europe/Berlin",
+        image: { base64: imageData.base64, mimeType: imageData.mimeType },
+      }),
+    });
+
+    if (!invokeRes.ok) {
+      const errBody = await invokeRes.text();
+      console.error("process-message invoke failed (photo):", invokeRes.status, errBody);
+      await sendTelegramMessage(chatId, "❌ 图片处理失败，请稍后重试。");
+      return;
+    }
+
+    const responseData = await invokeRes.json();
+    console.log("process-message photo response:", JSON.stringify(responseData).substring(0, 300));
+
+    const replyMessage = responseData?.result?.message;
+    if (replyMessage) {
+      await sendTelegramMessage(chatId, replyMessage);
+    } else {
+      await sendTelegramMessage(chatId, "✅ 图片已处理完成。");
+    }
+  } catch (invokeErr) {
+    console.error("process-message photo invocation error:", invokeErr);
+    await sendTelegramMessage(chatId, "❌ 图片处理失败，请稍后重试。");
+  }
+}
+
 // ============================================
 // Main Webhook Handler
 // ============================================
@@ -382,6 +493,14 @@ Deno.serve(async (req: Request) => {
     // Handle voice messages
     if (message.voice) {
       await handleVoiceMessage(chatId, message.voice.file_id);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Handle photo messages
+    if (message.photo && message.photo.length > 0) {
+      await handlePhotoMessage(chatId, message.photo, message.caption);
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
