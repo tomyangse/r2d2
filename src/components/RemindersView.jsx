@@ -1,6 +1,24 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
-import { format, isToday, isTomorrow, isThisWeek, isPast, parseISO, differenceInMinutes } from 'date-fns';
-import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, ArrowRight, ChevronDown, MapPin } from 'lucide-react';
+import {
+  format,
+  isToday,
+  isTomorrow,
+  isThisWeek,
+  isPast,
+  parseISO,
+  differenceInMinutes,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  isSameMonth,
+  isSameDay,
+  addMonths,
+  subMonths,
+  differenceInWeeks
+} from 'date-fns';
+import { Check, Trash2, CalendarClock, Repeat, MoreVertical, Clock, Pencil, ArrowRight, ChevronDown, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import EditReminderModal from './EditReminderModal';
 
@@ -57,57 +75,64 @@ function getStatusBadge(datetime, groupKey) {
   return null;
 }
 
-function groupReminders(reminders) {
-  const groups = {
-    overdue: [],
-    today: [],
-    tomorrow: [],
-    thisWeek: [],
-    later: [],
-    noDate: [],
-  };
+/**
+ * Helper to check if a reminder or task occurs on a specific checkDate
+ */
+function isReminderOccurOnDate(r, checkDate) {
+  if (!r.datetime) return false;
 
-  reminders.forEach(r => {
-    if (!r.datetime) {
-      groups.noDate.push(r);
-      return;
-    }
+  let date;
+  try {
+    date = parseISO(r.datetime);
+  } catch (e) {
+    return false;
+  }
 
-    const date = parseISO(r.datetime);
+  // Normalize times to midnight in the local timezone for date-only comparison
+  const checkStart = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+  const rStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-    if (isPast(date) && !isToday(date) && !r.completed) {
-      groups.overdue.push(r);
-    } else if (isToday(date)) {
-      groups.today.push(r);
-    } else if (isTomorrow(date)) {
-      groups.tomorrow.push(r);
-    } else if (isThisWeek(date)) {
-      groups.thisWeek.push(r);
-    } else {
-      groups.later.push(r);
-    }
-  });
+  if (checkStart < rStart) {
+    return false;
+  }
 
-  // Sort each group by datetime
-  Object.keys(groups).forEach(key => {
-    groups[key].sort((a, b) => {
-      if (!a.datetime) return 1;
-      if (!b.datetime) return -1;
-      return new Date(a.datetime) - new Date(b.datetime);
-    });
-  });
+  if (!r.recurrence) {
+    return isSameDay(date, checkDate);
+  }
 
-  return groups;
+  const dayOfWeek = checkDate.getDay();
+  const dayOfMonth = checkDate.getDate();
+
+  if (r.recurrence === 'daily') {
+    return true;
+  }
+
+  if (r.recurrence === 'weekdays') {
+    return dayOfWeek >= 1 && dayOfWeek <= 5;
+  }
+
+  if (r.recurrence.startsWith('weekly:')) {
+    const targetDay = parseInt(r.recurrence.split(':')[1], 10);
+    return dayOfWeek === targetDay;
+  }
+
+  if (r.recurrence.startsWith('biweekly:')) {
+    const targetDay = parseInt(r.recurrence.split(':')[1], 10);
+    if (dayOfWeek !== targetDay) return false;
+
+    const startWeek = startOfWeek(date, { weekStartsOn: 1 });
+    const checkWeek = startOfWeek(checkDate, { weekStartsOn: 1 });
+    const diffWeeks = differenceInWeeks(checkWeek, startWeek);
+    return Math.abs(diffWeeks) % 2 === 0;
+  }
+
+  if (r.recurrence.startsWith('monthly:')) {
+    const targetDay = parseInt(r.recurrence.split(':')[1], 10);
+    return dayOfMonth === targetDay;
+  }
+
+  return false;
 }
-
-const GROUP_LABELS = {
-  overdue: '待确认',
-  today: '今天',
-  tomorrow: '明天',
-  thisWeek: '本周',
-  later: '之后',
-  noDate: '未设定时间',
-};
 
 /**
  * Full card reminder item — used for overdue, today, tomorrow groups.
@@ -455,7 +480,10 @@ function CompactReminderItem({ reminder }) {
 
 export default function RemindersView() {
   const { reminders, tasks, projects, showCompleted, toggleShowCompleted } = useStore();
-  const [showLater, setShowLater] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showOverdue, setShowOverdue] = useState(true);
+  const [showNoDate, setShowNoDate] = useState(false);
 
   // Normalize tasks into reminder-like objects
   const mappedTasks = useMemo(() => {
@@ -480,134 +508,216 @@ export default function RemindersView() {
   }, [reminders, mappedTasks]);
 
   const active = useMemo(() => combinedItems.filter(r => !r.completed), [combinedItems]);
-  const completed = useMemo(() => combinedItems.filter(r => r.completed), [combinedItems]);
-  const groups = useMemo(() => groupReminders(active), [active]);
 
-  const hasAny = combinedItems.length > 0;
+  const selectedDayItems = useMemo(() => {
+    return combinedItems.filter(item => isReminderOccurOnDate(item, selectedDate));
+  }, [combinedItems, selectedDate]);
 
-  // Groups that get full card rendering
-  const detailGroups = ['overdue', 'today', 'tomorrow'];
+  const activeOnSelectedDay = useMemo(() => {
+    return selectedDayItems.filter(item => !item.completed);
+  }, [selectedDayItems]);
 
-  if (!hasAny) {
-    return (
-      <div className="empty-state">
-        <CalendarClock className="empty-state__icon" />
-        <div className="empty-state__title">暂无日程</div>
-        <div className="empty-state__hint">
-          用自然语言告诉我你的安排
-        </div>
-        <div className="empty-state__examples">
-          <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('明天下午3点提醒我开会')}>
-            "明天下午3点提醒我开会"
-          </button>
-          <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('remind me to call mom at 5pm')}>
-            "remind me to call mom at 5pm"
-          </button>
-          <button className="empty-state__example" onClick={() => useStore.getState().sendMessage('每周日上午10点送女儿画画课')}>
-            "每周日上午10点送女儿画画课"
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const completedOnSelectedDay = useMemo(() => {
+    return selectedDayItems.filter(item => item.completed);
+  }, [selectedDayItems]);
+
+  const overdueItems = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return combinedItems.filter(item => {
+      if (item.completed || !item.datetime) return false;
+      if (item.recurrence) return false; // Recurring items shouldn't show in overdue
+      
+      const itemDate = parseISO(item.datetime);
+      const itemDay = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+      return itemDay < today;
+    });
+  }, [combinedItems]);
+
+  const noDateItems = useMemo(() => {
+    return combinedItems.filter(item => !item.completed && !item.datetime);
+  }, [combinedItems]);
+
+  // Calendar calculations
+  const startOfCurrentMonth = startOfMonth(currentMonth);
+  const endOfCurrentMonth = endOfMonth(currentMonth);
+  const startOfGrid = startOfWeek(startOfCurrentMonth, { weekStartsOn: 1 });
+  const endOfGrid = endOfWeek(endOfCurrentMonth, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: startOfGrid, end: endOfGrid });
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth() + 1;
+  const headerStr = `${year}年${month}月`;
+
+  const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const formattedSelectedDate = `${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日 · ${dayNames[selectedDate.getDay()]}`;
+
+  const totalSchedulesCount = activeOnSelectedDay.length + completedOnSelectedDay.length;
 
   return (
     <div className="animate-fade-in">
-      {/* Detailed card groups: overdue, today, tomorrow */}
-      {detailGroups.map(key => {
-        const items = groups[key];
-        if (!items || items.length === 0) return null;
-        return (
-          <div key={key}>
-            <div className="section-header">
-              <span className="section-header__title">{GROUP_LABELS[key]}</span>
-              <div className="section-header__line" />
-            </div>
-            {items.map((r, i) => (
-              <div key={r.id} style={{ animationDelay: `${i * 50}ms` }}>
-                <ReminderItem reminder={r} groupKey={key} />
-              </div>
-            ))}
-          </div>
-        );
-      })}
-
-      {/* Compact list: thisWeek */}
-      {groups.thisWeek.length > 0 && (
-        <div>
-          <div className="section-header">
-            <span className="section-header__title">
-              {GROUP_LABELS.thisWeek} ({groups.thisWeek.length})
-            </span>
-            <div className="section-header__line" />
-          </div>
-          <div className="compact-list-container">
-            {groups.thisWeek.map(r => (
-              <CompactReminderItem key={r.id} reminder={r} />
-            ))}
+      {/* Calendar Card */}
+      <div className="calendar-container">
+        <div className="calendar-header">
+          <span className="calendar-header__title">{headerStr}</span>
+          <div className="calendar-header__nav">
+            <button
+              className="calendar-nav-btn"
+              onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              className="calendar-nav-btn"
+              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+              aria-label="Next month"
+            >
+              <ChevronRight size={16} />
+            </button>
+            {(!isSameMonth(currentMonth, new Date()) || !isSameDay(selectedDate, new Date())) && (
+              <button
+                className="calendar-today-btn"
+                onClick={() => {
+                  const today = new Date();
+                  setCurrentMonth(today);
+                  setSelectedDate(today);
+                }}
+              >
+                今天
+              </button>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Compact list: later (collapsed by default) */}
-      {groups.later.length > 0 && (
-        <div>
-          <div className="section-header">
-            <span className="section-header__title">
-              之后 ({groups.later.length})
-            </span>
-            <div className="section-header__line" />
-          </div>
-          {showLater ? (
-            <>
-              <div className="compact-list-container">
-                {groups.later.map(r => (
-                  <CompactReminderItem key={r.id} reminder={r} />
-                ))}
-              </div>
-              <button className="completed-toggle" onClick={() => setShowLater(false)}>
-                收起
+        <div className="calendar-grid">
+          {['一', '二', '三', '四', '五', '六', '日'].map(d => (
+            <div key={d} className="calendar-grid__weekday">{d}</div>
+          ))}
+
+          {days.map((day, i) => {
+            const isCurrentMonth = isSameMonth(day, currentMonth);
+            const isSelected = isSameDay(day, selectedDate);
+            const isDayToday = isToday(day);
+
+            const dayItems = active.filter(item => isReminderOccurOnDate(item, day));
+            const hasRegular = dayItems.some(item => !item.isTask && !item.recurrence);
+            const hasRecurring = dayItems.some(item => !item.isTask && item.recurrence);
+            const hasTask = dayItems.some(item => item.isTask);
+
+            return (
+              <button
+                key={day.toISOString()}
+                className={`calendar-day ${!isCurrentMonth ? 'calendar-day--outside' : ''} ${isSelected ? 'calendar-day--selected' : ''} ${isDayToday ? 'calendar-day--today' : ''}`}
+                style={{ animationDelay: `${(i % 7) * 20}ms` }}
+                onClick={() => {
+                  setSelectedDate(day);
+                  if (!isCurrentMonth) {
+                    setCurrentMonth(startOfMonth(day));
+                  }
+                }}
+              >
+                <span className="calendar-day__number">{day.getDate()}</span>
+                <div className="calendar-day__dots">
+                  {hasRegular && <span className="calendar-dot calendar-dot--regular" />}
+                  {hasRecurring && <span className="calendar-dot calendar-dot--recurring" />}
+                  {hasTask && <span className="calendar-dot calendar-dot--task" />}
+                </div>
               </button>
-            </>
-          ) : (
-            <button className="completed-toggle" onClick={() => setShowLater(true)}>
-              展开查看 {groups.later.length} 项日程
-            </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Overdue Section */}
+      {overdueItems.length > 0 && (
+        <div className="accordion-section overdue-section">
+          <button
+            className="accordion-header"
+            onClick={() => setShowOverdue(!showOverdue)}
+            style={{ color: 'var(--accent-danger)' }}
+          >
+            <span className="accordion-header__label">
+              <span>⚠️ 逾期未完成 ({overdueItems.length})</span>
+            </span>
+            <ChevronDown
+              size={16}
+              className={`accordion-chevron ${showOverdue ? 'accordion-chevron--open' : ''}`}
+            />
+          </button>
+          {showOverdue && (
+            <div className="accordion-content">
+              {overdueItems.map(r => (
+                <ReminderItem key={r.id} reminder={r} groupKey="overdue" />
+              ))}
+            </div>
           )}
         </div>
       )}
 
-      {/* No date items */}
-      {groups.noDate.length > 0 && (
-        <div>
-          <div className="section-header">
-            <span className="section-header__title">
-              {GROUP_LABELS.noDate} ({groups.noDate.length})
-            </span>
-            <div className="section-header__line" />
-          </div>
-          {groups.noDate.map(r => (
-            <CompactReminderItem key={r.id} reminder={r} />
+      {/* Selected Day Details Section */}
+      <div className="details-header">
+        <span className="details-header__title">{formattedSelectedDate}</span>
+        <span className="details-header__count">{totalSchedulesCount} 项日程</span>
+      </div>
+
+      {/* Active items on selected day */}
+      {activeOnSelectedDay.length > 0 ? (
+        <div className="day-reminders-list">
+          {activeOnSelectedDay.map((r, i) => (
+            <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
+              <ReminderItem reminder={r} groupKey={isToday(selectedDate) ? 'today' : isTomorrow(selectedDate) ? 'tomorrow' : 'later'} />
+            </div>
           ))}
+        </div>
+      ) : (
+        <div className="empty-day-state" style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
+          ☕ 当天无未完成日程
         </div>
       )}
 
-      {/* Completed section — collapsible */}
-      {completed.length > 0 && (
-        <div className="completed-section">
+      {/* Completed items on selected day */}
+      {completedOnSelectedDay.length > 0 && (
+        <div className="completed-section" style={{ marginTop: 'var(--space-lg)' }}>
           <button
             className={`completed-section__header ${showCompleted ? 'completed-section__header--open' : ''}`}
             onClick={toggleShowCompleted}
           >
             <span className="completed-section__label">
-              已完成 ({completed.length})
+              已完成 ({completedOnSelectedDay.length})
             </span>
             <ChevronDown size={16} className="completed-section__chevron" />
           </button>
           {showCompleted && (
             <div className="completed-section__list">
-              {completed.map(r => (
+              {completedOnSelectedDay.map(r => (
                 <ReminderItem key={r.id} reminder={r} groupKey="completed" />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* No Date Items Section */}
+      {noDateItems.length > 0 && (
+        <div className="accordion-section no-date-section" style={{ marginTop: 'var(--space-lg)' }}>
+          <button
+            className="accordion-header"
+            onClick={() => setShowNoDate(!showNoDate)}
+          >
+            <span className="accordion-header__label">
+              <span>📂 未设定时间 ({noDateItems.length})</span>
+            </span>
+            <ChevronDown
+              size={16}
+              className={`accordion-chevron ${showNoDate ? 'accordion-chevron--open' : ''}`}
+            />
+          </button>
+          {showNoDate && (
+            <div className="accordion-content">
+              {noDateItems.map(r => (
+                <CompactReminderItem key={r.id} reminder={r} />
               ))}
             </div>
           )}
