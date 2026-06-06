@@ -736,16 +736,9 @@ export const useStore = create((set, get) => ({
     const task = get().tasks.find(t => t.id === id);
     if (!task) return;
 
-    // Cycle status: todo -> in_progress -> completed -> todo
-    let newStatus = 'todo';
-    let completedAt = null;
-
-    if (task.status === 'todo') {
-      newStatus = 'in_progress';
-    } else if (task.status === 'in_progress') {
-      newStatus = 'completed';
-      completedAt = new Date().toISOString();
-    }
+    const oldStatus = task.status;
+    const newStatus = oldStatus === 'completed' ? 'todo' : 'completed';
+    const completedAt = newStatus === 'completed' ? new Date().toISOString() : null;
 
     set(state => ({
       tasks: state.tasks.map(t =>
@@ -761,20 +754,18 @@ export const useStore = create((set, get) => ({
       console.error('Toggle task status error:', error);
       get().refreshTasks();
     } else {
-      const toastMsg = newStatus === 'completed' ? '任务已完成'
-        : newStatus === 'in_progress' ? '任务进行中'
-        : '任务已重置为待办';
+      const toastMsg = newStatus === 'completed' ? '任务已完成' : '任务已重置为待办';
       
       // If completed, provide undo option
       if (newStatus === 'completed') {
         get().showToast('success', toastMsg, async () => {
-          // Undo action: reset to in_progress
+          // Undo action: reset to old status
           set(state => ({
             tasks: state.tasks.map(t =>
-              t.id === id ? { ...t, status: 'in_progress', completed_at: null } : t
+              t.id === id ? { ...t, status: oldStatus, completed_at: null } : t
             )
           }));
-          await supabase.from('tasks').update({ status: 'in_progress', completed_at: null }).eq('id', id);
+          await supabase.from('tasks').update({ status: oldStatus, completed_at: null }).eq('id', id);
         });
       } else {
         get().showToast('success', toastMsg);
