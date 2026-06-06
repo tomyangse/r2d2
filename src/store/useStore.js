@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 export const useStore = create((set, get) => ({
   // --- State ---
   user: null,
@@ -595,7 +605,7 @@ export const useStore = create((set, get) => ({
     };
 
     // Optimistic Update
-    const tempId = crypto.randomUUID();
+    const tempId = generateUUID();
     const tempProj = { ...newProj, id: tempId, is_completed: false, created_at: new Date().toISOString() };
     set(state => ({ projects: [tempProj, ...state.projects] }));
 
@@ -667,7 +677,7 @@ export const useStore = create((set, get) => ({
     };
 
     // Optimistic Update
-    const tempId = crypto.randomUUID();
+    const tempId = generateUUID();
     const tempTask = { ...newTask, id: tempId, created_at: new Date().toISOString() };
     set(state => ({ tasks: [tempTask, ...state.tasks] }));
 

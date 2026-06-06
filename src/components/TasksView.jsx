@@ -67,13 +67,26 @@ export default function TasksView() {
     });
   }, [tasks, taskActiveDomain]);
 
-  // Filter top-level completed tasks (parent_id is null, status is completed)
+  // Filter completed tasks to show in the archive list.
+  // We show a completed task if it is completed, AND either:
+  // - It has no parent task (top-level task), OR
+  // - Its parent task is NOT completed (active).
   const completedTasks = useMemo(() => {
     return tasks.filter(t => {
       const matchDomain = taskActiveDomain === 'personal'
         ? (t.domain === 'personal' || t.domain === 'family')
         : t.domain === 'work';
-      return matchDomain && !t.parent_id && t.status === 'completed';
+      if (!matchDomain || t.status !== 'completed') return false;
+
+      if (t.parent_id) {
+        const parent = tasks.find(pt => pt.id === t.parent_id);
+        if (parent && parent.status === 'completed') {
+          // Parent is also completed, so this child will be shown under its parent in the archive.
+          // Don't show it at the top level of the archive.
+          return false;
+        }
+      }
+      return true;
     });
   }, [tasks, taskActiveDomain]);
 
@@ -148,7 +161,15 @@ export default function TasksView() {
   };
 
   const renderTaskNode = (t, depth = 0) => {
-    const childTasks = tasks.filter(child => child.parent_id === t.id);
+    // Only show active child tasks when rendering inside the active list
+    // (If the current task t is completed, show all children; otherwise only active children)
+    const childTasks = tasks.filter(child => {
+      if (t.status === 'completed') {
+        return child.parent_id === t.id;
+      }
+      return child.parent_id === t.id && child.status !== 'completed';
+    });
+    
     const expanded = isExpanded(t.id);
     const hasChildren = childTasks.length > 0;
     const canHaveChildren = depth < 2;
@@ -170,6 +191,7 @@ export default function TasksView() {
     
     // Resolve project title for tag display
     const project = projects.find(p => p.id === t.project_id);
+    const parentTask = t.parent_id ? tasks.find(pt => pt.id === t.parent_id) : null;
 
     return (
       <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -235,6 +257,11 @@ export default function TasksView() {
                   📁 {project.title}
                 </span>
               )}
+              {parentTask && (
+                <span style={{ fontSize: '9px', padding: '1px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                  属于: {parentTask.title}
+                </span>
+              )}
               {dateLabel && (
                 <span 
                   style={{ 
@@ -267,6 +294,19 @@ export default function TasksView() {
               </button>
               {activeTaskMenu === t.id && (
                 <div className="dropdown-menu" style={{ right: 0, top: '24px' }}>
+                  {canHaveChildren && (
+                    <button
+                      className="dropdown-menu__item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!expanded) toggleExpand(t.id);
+                        setActiveTaskMenu(null);
+                      }}
+                    >
+                      <Plus size={12} />
+                      <span>添加子任务</span>
+                    </button>
+                  )}
                   <button className="dropdown-menu__item" onClick={(e) => handleEditTask(t, e)}>
                     <Pencil size={12} />
                     <span>编辑</span>
@@ -279,7 +319,7 @@ export default function TasksView() {
               )}
             </div>
 
-            {canHaveChildren && (
+            {canHaveChildren && (hasChildren || expanded) && (
               <ChevronRight
                 size={14}
                 style={{
