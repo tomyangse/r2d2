@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Folder, Briefcase, Home, Heart, ShoppingBag, BookOpen, Sparkles,
-  Plus, MoreVertical, Pencil, Trash2, LayoutGrid, List, Check,
-  Calendar, Flag, Circle, Play, CheckCircle2, ChevronRight, X
+  Plus, MoreVertical, Pencil, Trash2, CheckCircle2, Circle, Play,
+  ChevronRight, Calendar, X
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { format, isToday, isTomorrow, parseISO } from 'date-fns';
@@ -25,11 +25,11 @@ export default function TasksView() {
     tasks = [], 
     taskActiveDomain, 
     setTaskActiveDomain, 
-    taskViewMode, 
-    setTaskViewMode,
     toggleTaskStatus,
     deleteTask,
-    deleteProject
+    deleteProject,
+    addProject,
+    addTask
   } = useStore();
 
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -39,6 +39,11 @@ export default function TasksView() {
   const [editingTask, setEditingTask] = useState(null);
   const [activeProjMenu, setActiveProjMenu] = useState(null);
   const [activeTaskMenu, setActiveTaskMenu] = useState(null);
+
+  const [expandedIds, setExpandedIds] = useState(new Set());
+  const [newTitle, setNewTitle] = useState('');
+  const [newType, setNewType] = useState('task'); // 'task' | 'project'
+  const [childInputs, setChildInputs] = useState({});
 
   const projMenuRef = useRef(null);
   const taskMenuRef = useRef(null);
@@ -57,34 +62,39 @@ export default function TasksView() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Filter projects by domain
+  const toggleExpand = (id) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const isExpanded = (id) => expandedIds.has(id);
+
+  // Filter projects by domain (personal tab merges both personal & family)
   const filteredProjects = useMemo(() => {
-    return projects.filter(p => p.domain === taskActiveDomain);
+    return projects.filter(p => {
+      if (taskActiveDomain === 'personal') {
+        return p.domain === 'personal' || p.domain === 'family';
+      }
+      return p.domain === 'work';
+    });
   }, [projects, taskActiveDomain]);
 
-  // Filter tasks by domain and selected project
-  const filteredTasks = useMemo(() => {
+  // Filter independent Level 1 tasks by domain
+  const activeIndependentTasks = useMemo(() => {
     return tasks.filter(t => {
-      const matchDomain = t.domain === taskActiveDomain;
-      const matchProject = selectedProjectId ? t.project_id === selectedProjectId : true;
-      return matchDomain && matchProject;
+      const matchDomain = taskActiveDomain === 'personal'
+        ? (t.domain === 'personal' || t.domain === 'family')
+        : t.domain === 'work';
+      return matchDomain && !t.project_id && !t.parent_id;
     });
-  }, [tasks, taskActiveDomain, selectedProjectId]);
-
-  // Calculate task counts per column for Kanban
-  const kanbanGroups = useMemo(() => {
-    const groups = { todo: [], in_progress: [], completed: [] };
-    filteredTasks.forEach(t => {
-      if (t.status === 'completed') {
-        groups.completed.push(t);
-      } else if (t.status === 'in_progress') {
-        groups.in_progress.push(t);
-      } else {
-        groups.todo.push(t);
-      }
-    });
-    return groups;
-  }, [filteredTasks]);
+  }, [tasks, taskActiveDomain]);
 
   // Project progress statistics
   const projectStats = useMemo(() => {
@@ -141,15 +151,70 @@ export default function TasksView() {
     const date = parseISO(dateStr);
     if (isToday(date)) return '今天截止';
     if (isTomorrow(date)) return '明天截止';
-    return format(date, 'M月d日 HH:mm') + ' 截止';
+    return format(date, 'M月d日 HH:mm');
   };
 
-  const renderTaskCard = (t) => {
-    const project = projects.find(p => p.id === t.project_id);
-    const dateLabel = getTaskDueDateLabel(t.due_date);
-    const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed';
+  const handleTopLevelSubmit = (e) => {
+    e.preventDefault();
+    const val = newTitle.trim();
+    if (!val) return;
     
-    // Status Icon
+    const domain = taskActiveDomain === 'work' ? 'work' : 'personal';
+    
+    if (newType === 'project') {
+      addProject(val, null, domain, 'indigo', 'Folder');
+    } else {
+      addTask(val, null, domain, null, 'medium', null, null);
+    }
+    setNewTitle('');
+  };
+
+  const renderInlineAddInput = (parentId, isProject) => {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const val = childInputs[parentId]?.trim();
+          if (!val) return;
+          
+          const domain = taskActiveDomain === 'work' ? 'work' : 'personal';
+          
+          if (isProject) {
+            addTask(val, null, domain, parentId, 'medium', null, null);
+          } else {
+            const parentTask = tasks.find(t => t.id === parentId);
+            const projId = parentTask ? parentTask.project_id : null;
+            addTask(val, null, domain, projId, 'medium', null, parentId);
+          }
+          
+          setChildInputs(prev => ({ ...prev, [parentId]: '' }));
+        }}
+        style={{ display: 'flex', width: '100%', marginTop: '4px' }}
+      >
+        <input
+          type="text"
+          className="form-input"
+          style={{
+            flex: 1,
+            fontSize: '11px',
+            padding: '6px 10px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--bg-tertiary)',
+            background: 'var(--bg-hover)'
+          }}
+          placeholder={isProject ? "＋ 添加子任务..." : "＋ 添加下一级子任务..."}
+          value={childInputs[parentId] || ''}
+          onChange={(e) => setChildInputs(prev => ({ ...prev, [parentId]: e.target.value }))}
+        />
+      </form>
+    );
+  };
+
+  const renderTaskNode = (t, depth = 0) => {
+    const childTasks = tasks.filter(child => child.parent_id === t.id);
+    const expanded = isExpanded(t.id);
+    const hasChildren = childTasks.length > 0;
+    
     const StatusIcon = t.status === 'completed' 
       ? CheckCircle2 
       : t.status === 'in_progress' 
@@ -162,48 +227,53 @@ export default function TasksView() {
         ? 'var(--accent-warning)' 
         : 'var(--text-muted)';
 
+    const isOverdue = t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed';
+    const dateLabel = getTaskDueDateLabel(t.due_date);
+
     return (
-      <div 
-        key={t.id}
-        className={`task-card task-card--priority-${t.priority} ${t.status === 'completed' ? 'task-card--completed' : ''}`}
-        style={{
-          background: 'var(--bg-card)',
-          borderRadius: 'var(--radius-md)',
-          padding: 'var(--space-md)',
-          border: 'var(--border-subtle)',
-          boxShadow: 'var(--shadow-xs)',
-          borderLeft: `4px solid var(--priority-${t.priority}, ${t.priority === 'high' ? '#e05252' : t.priority === 'medium' ? '#e6a817' : '#c0c0d0'})`,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          position: 'relative',
-          transition: 'all 0.2s ease',
-          cursor: 'default'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: 1, minWidth: 0 }}>
-            <button 
-              onClick={() => toggleTaskStatus(t.id)}
+      <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {/* Task Row */}
+        <div
+          className={`task-card ${t.status === 'completed' ? 'task-card--completed' : ''}`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-card)',
+            borderLeft: `3px solid var(--priority-${t.priority}, ${t.priority === 'high' ? '#e05252' : t.priority === 'medium' ? '#e6a817' : '#c0c0d0'})`,
+            border: 'var(--border-subtle)',
+            boxShadow: 'var(--shadow-xs)',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
+          }}
+          onClick={() => toggleExpand(t.id)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+            {/* Status Button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleTaskStatus(t.id); }}
               style={{
                 background: 'none',
                 border: 'none',
                 color: statusColor,
                 cursor: 'pointer',
                 padding: 0,
-                marginTop: '2px',
                 display: 'flex',
                 alignItems: 'center',
                 flexShrink: 0
               }}
             >
-              <StatusIcon size={18} />
+              <StatusIcon size={16} />
             </button>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <span 
-                style={{ 
-                  fontSize: 'var(--font-size-base)', 
-                  fontWeight: '500', 
+
+            {/* Title & Details */}
+            <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  fontSize: 'var(--font-size-sm)',
+                  fontWeight: '500',
                   color: 'var(--text-primary)',
                   textDecoration: t.status === 'completed' ? 'line-through' : 'none',
                   opacity: t.status === 'completed' ? 0.6 : 1,
@@ -213,75 +283,138 @@ export default function TasksView() {
                 {t.title}
               </span>
               {t.description && (
-                <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '2px', wordBreak: 'break-all' }}>
-                  {t.description}
-                </p>
+                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>
+                  ({t.description})
+                </span>
+              )}
+              {dateLabel && (
+                <span 
+                  style={{ 
+                    fontSize: '9px', 
+                    color: isOverdue ? 'var(--accent-danger)' : 'var(--text-secondary)',
+                    background: isOverdue ? 'var(--accent-danger-soft)' : 'var(--bg-tertiary)',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    fontWeight: '600'
+                  }}
+                >
+                  <Calendar size={10} />
+                  {dateLabel}
+                </span>
               )}
             </div>
           </div>
 
-          <div ref={activeTaskMenu === t.id ? taskMenuRef : null} style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setActiveTaskMenu(activeTaskMenu === t.id ? null : t.id)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-            >
-              <MoreVertical size={16} />
-            </button>
-            {activeTaskMenu === t.id && (
-              <div className="dropdown-menu" style={{ right: 0, top: '20px' }}>
-                <button className="dropdown-menu__item" onClick={(e) => handleEditTask(t, e)}>
-                  <Pencil size={14} />
-                  <span>编辑任务</span>
-                </button>
-                <button className="dropdown-menu__item" onClick={() => { toggleTaskStatus(t.id); setActiveTaskMenu(null); }}>
-                  <Check size={14} />
-                  <span>切换状态</span>
-                </button>
-                <button className="dropdown-menu__item dropdown-menu__item--danger" onClick={(e) => handleDeleteTask(t.id, e)}>
-                  <Trash2 size={14} />
-                  <span>删除任务</span>
-                </button>
-              </div>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
+            {/* Menu */}
+            <div ref={activeTaskMenu === t.id ? taskMenuRef : null} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setActiveTaskMenu(activeTaskMenu === t.id ? null : t.id)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}
+              >
+                <MoreVertical size={14} />
+              </button>
+              {activeTaskMenu === t.id && (
+                <div className="dropdown-menu" style={{ right: 0, top: '24px' }}>
+                  <button className="dropdown-menu__item" onClick={(e) => handleEditTask(t, e)}>
+                    <Pencil size={12} />
+                    <span>编辑</span>
+                  </button>
+                  <button className="dropdown-menu__item dropdown-menu__item--danger" onClick={(e) => handleDeleteTask(t.id, e)}>
+                    <Trash2 size={12} />
+                    <span>删除</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <ChevronRight
+              size={14}
+              style={{
+                color: 'var(--text-muted)',
+                transform: expanded ? 'rotate(90deg)' : 'none',
+                transition: 'transform var(--duration-base)',
+                cursor: 'pointer'
+              }}
+              onClick={() => toggleExpand(t.id)}
+            />
           </div>
         </div>
 
-        {/* Task Meta Row */}
-        {(project || dateLabel) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
-            {project && (
-              <span 
-                onClick={() => setSelectedProjectId(project.id)}
-                className={`status-badge color-theme-${project.color_theme}`}
-                style={{
-                  fontSize: '9px',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-pill)',
-                  cursor: 'pointer',
-                  fontWeight: '600'
-                }}
-              >
-                📁 {project.title}
-              </span>
-            )}
-            {dateLabel && (
-              <span 
-                style={{ 
-                  fontSize: '9px', 
-                  color: isOverdue ? 'var(--accent-danger)' : 'var(--text-secondary)',
-                  background: isOverdue ? 'var(--accent-danger-soft)' : 'var(--bg-tertiary)',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-pill)',
-                  fontWeight: '600',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '2px'
-                }}
-              >
-                <Calendar size={10} />
-                {dateLabel}
-              </span>
-            )}
+        {/* Level 3 Children under Task */}
+        {expanded && (
+          <div style={{ marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px dashed var(--bg-tertiary)', marginLeft: '10px', paddingLeft: '10px' }}>
+            {childTasks.map(child => {
+              const childStatusColor = child.status === 'completed' ? 'var(--accent-success)' : 'var(--text-muted)';
+              const ChildStatusIcon = child.status === 'completed' ? CheckCircle2 : Circle;
+              
+              return (
+                <div
+                  key={child.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-hover)',
+                    border: 'var(--border-subtle)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                    <button
+                      onClick={() => toggleTaskStatus(child.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: childStatusColor,
+                        cursor: 'pointer',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <ChildStatusIcon size={14} />
+                    </button>
+                    <span
+                      style={{
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: '500',
+                        color: 'var(--text-primary)',
+                        textDecoration: child.status === 'completed' ? 'line-through' : 'none',
+                        opacity: child.status === 'completed' ? 0.6 : 1,
+                        wordBreak: 'break-all'
+                      }}
+                    >
+                      {child.title}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <button
+                      onClick={() => deleteTask(child.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        padding: '4px'
+                      }}
+                      title="删除子任务"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            
+            {depth < 2 && renderInlineAddInput(t.id, false)}
           </div>
         )}
       </div>
@@ -291,7 +424,7 @@ export default function TasksView() {
   return (
     <div className="tasks-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
       
-      {/* 1. Domain Slider Selector */}
+      {/* 1. Domain Selector Tabs (Merged Personal & Family, Work first) */}
       <div 
         className="domain-tabs-container"
         style={{ 
@@ -304,15 +437,14 @@ export default function TasksView() {
         }}
       >
         {[
-          { id: 'personal', label: '🏠 个人生活' },
-          { id: 'family', label: '👨‍👩‍👧‍👦 家庭协同' },
-          { id: 'work', label: '💼 工作事务' }
+          { id: 'work', label: '💼 工作事务' },
+          { id: 'personal', label: '🏠 个人生活' }
         ].map(tab => (
           <button
             key={tab.id}
             onClick={() => {
               setTaskActiveDomain(tab.id);
-              setSelectedProjectId(null); // Reset filter when switching domain
+              setSelectedProjectId(null);
             }}
             style={{
               flex: 1,
@@ -337,295 +469,199 @@ export default function TasksView() {
         ))}
       </div>
 
-      {/* 2. Projects Dashboard section */}
-      <div className="projects-section" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h4 style={{ fontSize: 'var(--font-size-sm)', fontWeight: '600', color: 'var(--text-secondary)' }}>项目</h4>
-          <button 
-            onClick={() => { setEditingProject(null); setProjectModalOpen(true); }}
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              color: 'var(--accent-primary)', 
+      {/* 2. Top-level inline add form */}
+      <form onSubmit={handleTopLevelSubmit} style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', background: 'var(--bg-hover)', borderRadius: 'var(--radius-md)', padding: '2px', border: 'var(--border-subtle)', flex: 1, alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setNewType(newType === 'task' ? 'project' : 'task')}
+            style={{
+              border: 'none',
+              background: 'none',
+              padding: '6px 12px',
+              color: 'var(--accent-primary)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '2px',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '500'
+              gap: '4px',
+              fontSize: 'var(--font-size-xs)',
+              fontWeight: '600'
             }}
+            title="点击切换类型"
           >
-            <Plus size={14} /> 新建项目
+            {newType === 'project' ? <Folder size={14} /> : <Circle size={14} />}
+            <span>{newType === 'project' ? '项目' : '主任务'}</span>
           </button>
+          <div style={{ width: '1px', height: '18px', background: 'var(--bg-tertiary)' }} />
+          <input
+            type="text"
+            className="form-input"
+            style={{
+              flex: 1,
+              border: 'none',
+              background: 'none',
+              boxShadow: 'none',
+              fontSize: 'var(--font-size-sm)',
+              padding: '6px 12px'
+            }}
+            placeholder={newType === 'project' ? "新建主项目名称..." : "新建独立主任务..."}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
         </div>
-
-        {/* Project Card Horizontal Grid */}
-        <div 
-          className="projects-scroll-grid"
+        <button
+          type="submit"
           style={{
-            display: 'flex',
-            gap: '12px',
-            overflowX: 'auto',
-            paddingBottom: '8px',
-            scrollbarWidth: 'none'
+            background: 'var(--accent-primary)',
+            color: 'white',
+            border: 'none',
+            padding: '0 16px',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: '600',
+            boxShadow: 'var(--shadow-xs)'
           }}
         >
-          {filteredProjects.length === 0 ? (
-            <div style={{ padding: '24px 0', width: '100%', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: 'var(--border-subtle)' }}>
-              暂无项目，创建一个项目以组织任务
+          添加
+        </button>
+      </form>
+
+      {/* 3. Tree Hierarchy rendering */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        
+        {/* Projects list */}
+        {filteredProjects.length > 0 && (
+          <div>
+            <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: '600', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              主项目 / 文件夹 ({filteredProjects.length})
             </div>
-          ) : (
-            filteredProjects.map(proj => {
-              const stats = projectStats[proj.id] || { total: 0, completed: 0, percent: 0 };
+            {filteredProjects.map(proj => {
+              const projTasks = tasks.filter(t => t.project_id === proj.id && !t.parent_id);
+              const totalTasks = tasks.filter(t => t.project_id === proj.id).length;
+              const completedTasksCount = tasks.filter(t => t.project_id === proj.id && t.status === 'completed').length;
+              const percent = totalTasks > 0 ? Math.round((completedTasksCount / totalTasks) * 100) : 0;
               const IconComp = ICON_MAP[proj.icon] || Folder;
-              const isSelected = selectedProjectId === proj.id;
+              const expanded = isExpanded(proj.id);
               
               return (
-                <div
-                  key={proj.id}
-                  onClick={() => setSelectedProjectId(isSelected ? null : proj.id)}
-                  style={{
-                    flexShrink: 0,
-                    width: '140px',
-                    background: 'var(--bg-card)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '12px',
-                    border: isSelected ? '2px solid var(--accent-primary)' : 'var(--border-subtle)',
-                    boxShadow: isSelected ? 'var(--shadow-md)' : 'var(--shadow-xs)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    height: '110px',
-                    position: 'relative',
-                    transition: 'all 0.2s'
-                  }}
-                  className={`project-card color-theme-${proj.color_theme}`}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div 
-                      style={{ 
-                        width: '28px', 
-                        height: '28px', 
-                        borderRadius: '6px', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        background: 'var(--accent-primary-soft)',
-                        color: 'var(--accent-primary)'
-                      }}
-                    >
-                      <IconComp size={16} />
-                    </div>
-
-                    <div ref={activeProjMenu === proj.id ? projMenuRef : null} style={{ position: 'relative' }}>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveProjMenu(activeProjMenu === proj.id ? null : proj.id);
+                <div key={proj.id} style={{ marginBottom: '12px' }} className={`color-theme-${proj.color_theme}`}>
+                  {/* Project Folder Row */}
+                  <div
+                    style={{
+                      background: 'var(--bg-card)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '12px var(--space-md)',
+                      border: 'var(--border-subtle)',
+                      boxShadow: 'var(--shadow-xs)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      borderLeft: `4px solid var(--accent-primary)`
+                    }}
+                    onClick={() => toggleExpand(proj.id)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                      <div 
+                        style={{ 
+                          width: '28px', 
+                          height: '28px', 
+                          borderRadius: '6px', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          background: 'var(--accent-primary-soft)',
+                          color: 'var(--accent-primary)'
                         }}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '2px' }}
                       >
-                        <MoreVertical size={14} />
-                      </button>
-                      {activeProjMenu === proj.id && (
-                        <div className="dropdown-menu" style={{ right: 0, top: '16px' }}>
-                          <button className="dropdown-menu__item" onClick={(e) => handleEditProject(proj, e)}>
-                            <Pencil size={12} />
-                            <span>编辑</span>
-                          </button>
-                          <button className="dropdown-menu__item dropdown-menu__item--danger" onClick={(e) => handleDeleteProject(proj.id, e)}>
-                            <Trash2 size={12} />
-                            <span>删除</span>
-                          </button>
-                        </div>
-                      )}
+                        <IconComp size={16} />
+                      </div>
+                      <span style={{ fontSize: 'var(--font-size-base)', fontWeight: '600', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {proj.title}
+                      </span>
+                      <span style={{ fontSize: '9px', fontWeight: '600', color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', padding: '1px 6px', borderRadius: '4px' }}>
+                        {percent}% ({completedTasksCount}/{totalTasks})
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={e => e.stopPropagation()}>
+                      {/* Project Dropdown Menu */}
+                      <div ref={activeProjMenu === proj.id ? projMenuRef : null} style={{ position: 'relative' }}>
+                        <button
+                          onClick={() => setActiveProjMenu(activeProjMenu === proj.id ? null : proj.id)}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}
+                        >
+                          <MoreVertical size={14} />
+                        </button>
+                        {activeProjMenu === proj.id && (
+                          <div className="dropdown-menu" style={{ right: 0, top: '24px' }}>
+                            <button className="dropdown-menu__item" onClick={(e) => handleEditProject(proj, e)}>
+                              <Pencil size={12} />
+                              <span>编辑项目</span>
+                            </button>
+                            <button className="dropdown-menu__item dropdown-menu__item--danger" onClick={(e) => handleDeleteProject(proj.id, e)}>
+                              <Trash2 size={12} />
+                              <span>删除项目</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <ChevronRight
+                        size={16}
+                        style={{
+                          color: 'var(--text-muted)',
+                          transform: expanded ? 'rotate(90deg)' : 'none',
+                          transition: 'transform var(--duration-base)',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => toggleExpand(proj.id)}
+                      />
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '8px', minWidth: 0 }}>
-                    <h5 style={{ fontSize: 'var(--font-size-base)', fontWeight: '600', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {proj.title}
-                    </h5>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                      <span style={{ fontSize: '9px', color: 'var(--text-tertiary)' }}>{stats.completed}/{stats.total} 任务</span>
-                      <span style={{ fontSize: '9px', fontWeight: '600', color: 'var(--accent-primary)' }}>{stats.percent}%</span>
+                  {/* Level 2 Tasks under Project */}
+                  {expanded && (
+                    <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px', borderLeft: '1px dashed var(--bg-tertiary)', marginLeft: '14px', paddingLeft: '12px' }}>
+                      {projTasks.map(task => renderTaskNode(task, 1))}
+                      
+                      {/* Add task inline input */}
+                      {renderInlineAddInput(proj.id, true)}
                     </div>
-                    {/* Linear Progress Bar */}
-                    <div style={{ height: '4px', background: 'var(--bg-tertiary)', borderRadius: '2px', overflow: 'hidden', marginTop: '4px' }}>
-                      <div style={{ height: '100%', width: `${stats.percent}%`, background: 'var(--accent-primary)', transition: 'width 0.3s ease' }} />
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
-            })
+            })}
+          </div>
+        )}
+
+        {/* Independent tasks list */}
+        <div>
+          <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: '600', color: 'var(--text-tertiary)', marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            独立主任务 ({activeIndependentTasks.length})
+          </div>
+          {activeIndependentTasks.length === 0 ? (
+            filteredProjects.length === 0 && (
+              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: 'var(--border-subtle)' }}>
+                ☕ 当前分类下暂无任务，输入上方内容开始创建
+              </div>
+            )
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {activeIndependentTasks.map(task => renderTaskNode(task, 0))}
+            </div>
           )}
         </div>
+
       </div>
 
-      {/* 3. Task Management Control Panel */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-sm)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: '600', color: 'var(--text-secondary)' }}>
-            任务列表 {selectedProjectId && '（筛选中）'}
-          </span>
-          {selectedProjectId && (
-            <button 
-              onClick={() => setSelectedProjectId(null)}
-              style={{ background: 'var(--bg-tertiary)', border: 'none', color: 'var(--text-secondary)', padding: '2px 8px', borderRadius: '4px', fontSize: '9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}
-            >
-              取消项目筛选 <X size={10} />
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* View Toggle */}
-          <div style={{ display: 'flex', background: 'var(--bg-tertiary)', padding: '2px', borderRadius: '6px' }}>
-            <button
-              onClick={() => setTaskViewMode('kanban')}
-              style={{
-                background: taskViewMode === 'kanban' ? 'var(--bg-secondary)' : 'transparent',
-                color: taskViewMode === 'kanban' ? 'var(--text-primary)' : 'var(--text-muted)',
-                border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', display: 'flex'
-              }}
-              title="看板视图"
-            >
-              <LayoutGrid size={14} />
-            </button>
-            <button
-              onClick={() => setTaskViewMode('list')}
-              style={{
-                background: taskViewMode === 'list' ? 'var(--bg-secondary)' : 'transparent',
-                color: taskViewMode === 'list' ? 'var(--text-primary)' : 'var(--text-muted)',
-                border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', display: 'flex'
-              }}
-              title="列表视图"
-            >
-              <List size={14} />
-            </button>
-          </div>
-
-          <button 
-            onClick={() => { setEditingTask(null); setTaskModalOpen(true); }}
-            style={{ 
-              background: 'var(--accent-primary)', 
-              border: 'none', 
-              color: '#fff', 
-              padding: '6px 12px', 
-              borderRadius: 'var(--radius-pill)', 
-              cursor: 'pointer', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '4px',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '500',
-              boxShadow: 'var(--shadow-xs)'
-            }}
-          >
-            <Plus size={14} /> 新建任务
-          </button>
-        </div>
-      </div>
-
-      {/* 4. Task Display Area (Kanban / List) */}
-      {filteredTasks.length === 0 ? (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-size-base)', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: 'var(--border-subtle)', boxShadow: 'var(--shadow-card)' }}>
-          暂无符合条件的任务
-        </div>
-      ) : taskViewMode === 'kanban' ? (
-        /* Kanban View - Scroll Snap */
-        <div 
-          className="kanban-scroll-container"
-          style={{
-            display: 'flex',
-            gap: '12px',
-            overflowX: 'auto',
-            scrollSnapType: 'x mandatory',
-            paddingBottom: '16px',
-            scrollbarWidth: 'none',
-            margin: '0 -16px',
-            padding: '0 16px 16px'
-          }}
-        >
-          {/* Column 1: TODO */}
-          <div 
-            style={{ 
-              flex: '0 0 280px', 
-              scrollSnapAlign: 'center', 
-              background: 'rgba(238, 238, 243, 0.5)', 
-              borderRadius: 'var(--radius-lg)', 
-              padding: '12px', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '12px',
-              maxHeight: '450px',
-              overflowY: 'auto'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid rgba(91, 77, 199, 0.2)', paddingBottom: '6px' }}>
-              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: '600', color: 'var(--text-primary)' }}>待办</span>
-              <span className="header__tab-badge" style={{ background: 'rgba(91, 77, 199, 0.1)', color: 'var(--accent-primary)' }}>{kanbanGroups.todo.length}</span>
-            </div>
-            {kanbanGroups.todo.map(renderTaskCard)}
-          </div>
-
-          {/* Column 2: IN PROGRESS */}
-          <div 
-            style={{ 
-              flex: '0 0 280px', 
-              scrollSnapAlign: 'center', 
-              background: 'rgba(238, 238, 243, 0.5)', 
-              borderRadius: 'var(--radius-lg)', 
-              padding: '12px', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '12px',
-              maxHeight: '450px',
-              overflowY: 'auto'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid rgba(230, 168, 23, 0.2)', paddingBottom: '6px' }}>
-              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: '600', color: 'var(--text-primary)' }}>进行中</span>
-              <span className="header__tab-badge" style={{ background: 'rgba(230, 168, 23, 0.1)', color: 'var(--accent-warning)' }}>{kanbanGroups.in_progress.length}</span>
-            </div>
-            {kanbanGroups.in_progress.map(renderTaskCard)}
-          </div>
-
-          {/* Column 3: COMPLETED */}
-          <div 
-            style={{ 
-              flex: '0 0 280px', 
-              scrollSnapAlign: 'center', 
-              background: 'rgba(238, 238, 243, 0.5)', 
-              borderRadius: 'var(--radius-lg)', 
-              padding: '12px', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '12px',
-              maxHeight: '450px',
-              overflowY: 'auto'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid rgba(61, 186, 140, 0.2)', paddingBottom: '6px' }}>
-              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: '600', color: 'var(--text-primary)' }}>已完成</span>
-              <span className="header__tab-badge" style={{ background: 'rgba(61, 186, 140, 0.10)', color: 'var(--accent-success)' }}>{kanbanGroups.completed.length}</span>
-            </div>
-            {kanbanGroups.completed.map(renderTaskCard)}
-          </div>
-        </div>
-      ) : (
-        /* List View */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {filteredTasks.map(renderTaskCard)}
-        </div>
-      )}
-
-      {/* 5. Modals */}
+      {/* Modals */}
       {projectModalOpen && (
         <ProjectDetailModal 
           project={editingProject} 
-          defaultDomain={taskActiveDomain}
+          defaultDomain={taskActiveDomain === 'work' ? 'work' : 'personal'}
           onClose={() => { setProjectModalOpen(false); setEditingProject(null); }} 
         />
       )}
@@ -633,7 +669,7 @@ export default function TasksView() {
       {taskModalOpen && (
         <TaskDetailModal 
           task={editingTask} 
-          defaultDomain={taskActiveDomain}
+          defaultDomain={taskActiveDomain === 'work' ? 'work' : 'personal'}
           defaultProjectId={selectedProjectId}
           onClose={() => { setTaskModalOpen(false); setEditingTask(null); }} 
         />

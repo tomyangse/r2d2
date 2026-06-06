@@ -90,7 +90,7 @@ export default function Header() {
           onClick={() => setActiveTab('tasks')}
           aria-label="Tasks tab"
         >
-          <span>看板</span>
+          <span>任务</span>
           {pendingTasks > 0 && <span className="header__tab-badge">{pendingTasks}</span>}
         </button>
       </nav>

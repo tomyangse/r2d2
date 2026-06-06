@@ -12,7 +12,7 @@ export const useStore = create((set, get) => ({
   messages: [],
   projects: [],
   tasks: [],
-  taskActiveDomain: 'personal',
+  taskActiveDomain: 'work',
   taskViewMode: 'kanban',
   isProcessing: false,
   toast: null,
@@ -641,7 +641,7 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  addTask: async (title, description, domain, projectId = null, priority = 'medium', dueDate = null) => {
+  addTask: async (title, description, domain, projectId = null, priority = 'medium', dueDate = null, parentId = null) => {
     const user = get().user;
     if (!user) return;
 
@@ -649,6 +649,9 @@ export const useStore = create((set, get) => ({
     if (projectId) {
       const proj = get().projects.find(p => p.id === projectId);
       if (proj) finalDomain = proj.domain;
+    } else if (parentId) {
+      const parentTask = get().tasks.find(t => t.id === parentId);
+      if (parentTask) finalDomain = parentTask.domain;
     }
 
     const newTask = {
@@ -656,6 +659,7 @@ export const useStore = create((set, get) => ({
       description,
       domain: finalDomain,
       project_id: projectId,
+      parent_id: parentId,
       priority,
       due_date: dueDate,
       status: 'todo',
@@ -700,9 +704,23 @@ export const useStore = create((set, get) => ({
   },
 
   deleteTask: async (id) => {
-    set(state => ({
-      tasks: state.tasks.filter(t => t.id !== id)
-    }));
+    set(state => {
+      // Find all descendants recursively to delete optimistically
+      const idsToDelete = new Set([id]);
+      let added = true;
+      while (added) {
+        added = false;
+        state.tasks.forEach(t => {
+          if (t.parent_id && idsToDelete.has(t.parent_id) && !idsToDelete.has(t.id)) {
+            idsToDelete.add(t.id);
+            added = true;
+          }
+        });
+      }
+      return {
+        tasks: state.tasks.filter(t => !idsToDelete.has(t.id))
+      };
+    });
 
     const { error } = await supabase.from('tasks').delete().eq('id', id);
     if (error) {
