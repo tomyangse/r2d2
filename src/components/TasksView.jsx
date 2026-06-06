@@ -174,6 +174,7 @@ export default function TasksView() {
     const expanded = isExpanded(t.id);
     const hasChildren = childTasks.length > 0;
     const canHaveChildren = depth < 2;
+    const hasAnySubtasks = tasks.some(child => child.parent_id === t.id);
     
     const StatusIcon = t.status === 'completed' 
       ? CheckCircle2 
@@ -264,7 +265,7 @@ export default function TasksView() {
                   属于: {parentTask.title}
                 </span>
               )}
-              {dateLabel && (
+              {dateLabel && !hasAnySubtasks && (
                 <span 
                   style={{ 
                     fontSize: '9px', 
@@ -315,7 +316,8 @@ export default function TasksView() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
             {/* Quick Calendar Picker */}
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            {!hasAnySubtasks && (
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -354,6 +356,7 @@ export default function TasksView() {
                 }}
               />
             </div>
+            )}
 
             {/* Options Menu */}
             <div ref={activeTaskMenu === t.id ? taskMenuRef : null} style={{ position: 'relative' }}>
