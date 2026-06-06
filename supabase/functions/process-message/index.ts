@@ -223,307 +223,334 @@ Deno.serve(async (req: Request) => {
       throw new Error("No valid JSON in Gemini response: " + text.substring(0, 300));
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-
-    // 4. Execute the action (attach user_id to all inserts)
-    switch (result.action) {
-      case "ADD_REMINDER": {
-        const { title, datetime, notes, recurrence, location } = result.data;
-        await supabase.from("reminders").insert({
-          title,
-          datetime: datetime || null,
-          notes: notes || null,
-          location: location || null,
-          recurrence: recurrence || null,
-          completed: false,
-          user_id: userId,
-        });
-        break;
+    const jsonStr = jsonMatch[0].trim();
+    let result: any;
+    try {
+      result = JSON.parse(jsonStr);
+    } catch {
+      // Handle multiple concatenated JSON objects, e.g. } {
+      try {
+        const formatted = "[" + jsonStr.replace(/\}\s*\{/g, "},{") + "]";
+        result = JSON.parse(formatted);
+      } catch (e) {
+        throw new Error("Failed to parse JSON: " + jsonStr + " Error: " + e.message);
       }
+    }
 
-      case "ADD_SHOPPING": {
-        const items = result.data.items || [];
-        if (items.length > 0) {
-          await supabase.from("shopping_items").insert(
-            items.map((item: { name: string; category?: string }) => ({
-              name: item.name,
-              category: item.category || null,
-              checked: false,
-              user_id: userId,
-            }))
-          );
+    const actions = Array.isArray(result) ? result : [result];
+    const confirmMessages: string[] = [];
+
+    // 4. Execute the actions (attach user_id to all inserts)
+    for (const act of actions) {
+      if (!act || !act.action) continue;
+      
+      switch (act.action) {
+        case "ADD_REMINDER": {
+          const { title, datetime, notes, recurrence, location } = act.data;
+          await supabase.from("reminders").insert({
+            title,
+            datetime: datetime || null,
+            notes: notes || null,
+            location: location || null,
+            recurrence: recurrence || null,
+            completed: false,
+            user_id: userId,
+          });
+          break;
         }
-        break;
-      }
 
-      case "ADD_NOTE": {
-        const { title, content, tags, type, color_theme } = result.data;
-        await supabase.from("notes").insert({
-          title: title || "无标题记事",
-          content: content || "",
-          tags: tags || [],
-          type: type || "sticky",
-          color_theme: color_theme || "indigo",
-          is_pinned: false,
-          user_id: userId,
-        });
-        break;
-      }
+        case "ADD_SHOPPING": {
+          const items = act.data.items || [];
+          if (items.length > 0) {
+            await supabase.from("shopping_items").insert(
+              items.map((item: { name: string; category?: string }) => ({
+                name: item.name,
+                category: item.category || null,
+                checked: false,
+                user_id: userId,
+              }))
+            );
+          }
+          break;
+        }
 
-      case "COMPLETE_REMINDER": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: reminders } = await supabase
-          .from("reminders")
-          .select("*")
-          .eq("completed", false)
-          .eq("user_id", userId);
+        case "ADD_NOTE": {
+          const { title, content, tags, type, color_theme } = act.data;
+          await supabase.from("notes").insert({
+            title: title || "无标题记事",
+            content: content || "",
+            tags: tags || [],
+            type: type || "sticky",
+            color_theme: color_theme || "indigo",
+            is_pinned: false,
+            user_id: userId,
+          });
+          break;
+        }
 
-        const match = reminders?.find((r: { title: string }) =>
-          r.title.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase
+        case "COMPLETE_REMINDER": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: reminders } = await supabase
             .from("reminders")
-            .update({ completed: true })
-            .eq("id", match.id);
+            .select("*")
+            .eq("completed", false)
+            .eq("user_id", userId);
+
+          const match = reminders?.find((r: { title: string }) =>
+            r.title.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase
+              .from("reminders")
+              .update({ completed: true })
+              .eq("id", match.id);
+          }
+          break;
         }
-        break;
-      }
 
-      case "COMPLETE_SHOPPING": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: items } = await supabase
-          .from("shopping_items")
-          .select("*")
-          .eq("checked", false)
-          .eq("user_id", userId);
-
-        const match = items?.find((i: { name: string }) =>
-          i.name.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase
+        case "COMPLETE_SHOPPING": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: items } = await supabase
             .from("shopping_items")
-            .update({ checked: true })
-            .eq("id", match.id);
-        }
-        break;
-      }
+            .select("*")
+            .eq("checked", false)
+            .eq("user_id", userId);
 
-      case "DELETE_REMINDER": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: reminders } = await supabase
-          .from("reminders")
-          .select("*")
-          .eq("user_id", userId);
-
-        const match = reminders?.find((r: { title: string }) =>
-          r.title.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase.from("reminders").delete().eq("id", match.id);
-        }
-        break;
-      }
-
-      case "DELETE_SHOPPING": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: items } = await supabase
-          .from("shopping_items")
-          .select("*")
-          .eq("user_id", userId);
-
-        const match = items?.find((i: { name: string }) =>
-          i.name.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase.from("shopping_items").delete().eq("id", match.id);
-        }
-        break;
-      }
-
-      case "DELETE_NOTE": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: notes } = await supabase
-          .from("notes")
-          .select("*")
-          .eq("user_id", userId);
-
-        const match = notes?.find((n: { title: string; content: string }) =>
-          n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase.from("notes").delete().eq("id", match.id);
-        }
-        break;
-      }
-
-      case "ADD_PROJECT": {
-        const { title, description, domain, color_theme, icon } = result.data;
-        await supabase.from("projects").insert({
-          title,
-          description: description || null,
-          domain: domain || "personal",
-          color_theme: color_theme || "indigo",
-          icon: icon || "Folder",
-          user_id: userId,
-        });
-        break;
-      }
-
-      case "ADD_TASK": {
-        const { title, description, domain, project_name, priority, due_date } = result.data;
-        let projectId = null;
-
-        if (project_name) {
-          const { data: proj } = await supabase
-            .from("projects")
-            .select("id")
-            .eq("user_id", userId)
-            .ilike("title", `%${project_name}%`)
-            .limit(1)
-            .maybeSingle();
-          if (proj) projectId = proj.id;
+          const match = items?.find((i: { name: string }) =>
+            i.name.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase
+              .from("shopping_items")
+              .update({ checked: true })
+              .eq("id", match.id);
+          }
+          break;
         }
 
-        await supabase.from("tasks").insert({
-          title,
-          description: description || null,
-          domain: domain || "personal",
-          project_id: projectId,
-          priority: priority || "medium",
-          due_date: due_date || null,
-          status: "todo",
-          user_id: userId,
-        });
-        break;
-      }
+        case "DELETE_REMINDER": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: reminders } = await supabase
+            .from("reminders")
+            .select("*")
+            .eq("user_id", userId);
 
-      case "COMPLETE_TASK": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: tasks } = await supabase
-          .from("tasks")
-          .select("*")
-          .neq("status", "completed")
-          .eq("user_id", userId);
+          const match = reminders?.find((r: { title: string }) =>
+            r.title.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase.from("reminders").delete().eq("id", match.id);
+          }
+          break;
+        }
 
-        const match = tasks?.find((t: { title: string }) =>
-          t.title.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase
+        case "DELETE_SHOPPING": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: items } = await supabase
+            .from("shopping_items")
+            .select("*")
+            .eq("user_id", userId);
+
+          const match = items?.find((i: { name: string }) =>
+            i.name.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase.from("shopping_items").delete().eq("id", match.id);
+          }
+          break;
+        }
+
+        case "DELETE_NOTE": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: notes } = await supabase
+            .from("notes")
+            .select("*")
+            .eq("user_id", userId);
+
+          const match = notes?.find((n: { title: string; content: string }) =>
+            n.title.toLowerCase().includes(query) || n.content.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase.from("notes").delete().eq("id", match.id);
+          }
+          break;
+        }
+
+        case "ADD_PROJECT": {
+          const { title, description, domain, color_theme, icon } = act.data;
+          await supabase.from("projects").insert({
+            title,
+            description: description || null,
+            domain: domain || "personal",
+            color_theme: color_theme || "indigo",
+            icon: icon || "Folder",
+            user_id: userId,
+          });
+          break;
+        }
+
+        case "ADD_TASK": {
+          const { title, description, domain, project_name, priority, due_date } = act.data;
+          let projectId = null;
+
+          if (project_name) {
+            const { data: proj } = await supabase
+              .from("projects")
+              .select("id")
+              .eq("user_id", userId)
+              .ilike("title", `%${project_name}%`)
+              .limit(1)
+              .maybeSingle();
+            if (proj) projectId = proj.id;
+          }
+
+          await supabase.from("tasks").insert({
+            title,
+            description: description || null,
+            domain: domain || "personal",
+            project_id: projectId,
+            priority: priority || "medium",
+            due_date: due_date || null,
+            status: "todo",
+            user_id: userId,
+          });
+          break;
+        }
+
+        case "COMPLETE_TASK": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: tasks } = await supabase
             .from("tasks")
-            .update({ status: "completed", completed_at: new Date().toISOString() })
-            .eq("id", match.id);
+            .select("*")
+            .neq("status", "completed")
+            .eq("user_id", userId);
+
+          const match = tasks?.find((t: { title: string }) =>
+            t.title.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase
+              .from("tasks")
+              .update({ status: "completed", completed_at: new Date().toISOString() })
+              .eq("id", match.id);
+          }
+          break;
         }
-        break;
-      }
 
-      case "DELETE_TASK": {
-        const query = result.data.query?.toLowerCase() || "";
-        const { data: tasks } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("user_id", userId);
+        case "DELETE_TASK": {
+          const query = act.data.query?.toLowerCase() || "";
+          const { data: tasks } = await supabase
+            .from("tasks")
+            .select("*")
+            .eq("user_id", userId);
 
-        const match = tasks?.find((t: { title: string }) =>
-          t.title.toLowerCase().includes(query)
-        );
-        if (match) {
-          await supabase.from("tasks").delete().eq("id", match.id);
+          const match = tasks?.find((t: { title: string }) =>
+            t.title.toLowerCase().includes(query)
+          );
+          if (match) {
+            await supabase.from("tasks").delete().eq("id", match.id);
+          }
+          break;
         }
-        break;
-      }
 
-      case "QUERY_KNOWLEDGE": {
-        const queryText = result.data.query || message.input;
+        case "QUERY_KNOWLEDGE": {
+          const queryText = act.data.query || message.input;
 
-        // 1. Fetch user's knowledge base (all notes, reminders, projects, tasks)
-        const [notesRes, remindersRes, projectsRes, tasksRes] = await Promise.all([
-          supabase.from("notes").select("title, content, tags").eq("user_id", userId),
-          supabase.from("reminders").select("title, datetime, notes").eq("user_id", userId),
-          supabase.from("projects").select("title, description, domain").eq("user_id", userId),
-          supabase.from("tasks").select("title, description, domain, status, priority, due_date").eq("user_id", userId),
-        ]);
+          // 1. Fetch user's knowledge base (all notes, reminders, projects, tasks)
+          const [notesRes, remindersRes, projectsRes, tasksRes] = await Promise.all([
+            supabase.from("notes").select("title, content, tags").eq("user_id", userId),
+            supabase.from("reminders").select("title, datetime, notes").eq("user_id", userId),
+            supabase.from("projects").select("title, description, domain").eq("user_id", userId),
+            supabase.from("tasks").select("title, description, domain, status, priority, due_date").eq("user_id", userId),
+          ]);
 
-        const notes = notesRes.data || [];
-        const reminders = remindersRes.data || [];
-        const projects = projectsRes.data || [];
-        const tasks = tasksRes.data || [];
+          const notes = notesRes.data || [];
+          const reminders = remindersRes.data || [];
+          const projects = projectsRes.data || [];
+          const tasks = tasksRes.data || [];
 
-        // 2. Format knowledge base as context string
-        const contextStr = [
-          "Here is the user's personal database context:",
-          "=== NOTES ===",
-          notes.map((n, i) => `[Note #${i+1}] Title: "${n.title}"\nTags: ${JSON.stringify(n.tags)}\nContent:\n${n.content}`).join("\n\n"),
-          "=== REMINDERS & SCHEDULES ===",
-          reminders.map((r, i) => `[Reminder #${i+1}] Title: "${r.title}"\nTime: ${r.datetime || "No time specified"}\nNotes: ${r.notes || "None"}`).join("\n\n"),
-          "=== PROJECTS ===",
-          projects.map((p, i) => `[Project #${i+1}] Title: "${p.title}"\nDomain: ${p.domain}\nDescription: ${p.description || "None"}`).join("\n\n"),
-          "=== TASKS ===",
-          tasks.map((t, i) => `[Task #${i+1}] Title: "${t.title}"\nDomain: ${t.domain}\nStatus: ${t.status}\nPriority: ${t.priority}\nDue Date: ${t.due_date || "No deadline"}\nDescription: ${t.description || "None"}`).join("\n\n"),
-        ].join("\n\n");
+          // 2. Format knowledge base as context string
+          const contextStr = [
+            "Here is the user's personal database context:",
+            "=== NOTES ===",
+            notes.map((n, i) => `[Note #${i+1}] Title: "${n.title}"\nTags: ${JSON.stringify(n.tags)}\nContent:\n${n.content}`).join("\n\n"),
+            "=== REMINDERS & SCHEDULES ===",
+            reminders.map((r, i) => `[Reminder #${i+1}] Title: "${r.title}"\nTime: ${r.datetime || "No time specified"}\nNotes: ${r.notes || "None"}`).join("\n\n"),
+            "=== PROJECTS ===",
+            projects.map((p, i) => `[Project #${i+1}] Title: "${p.title}"\nDomain: ${p.domain}\nDescription: ${p.description || "None"}`).join("\n\n"),
+            "=== TASKS ===",
+            tasks.map((t, i) => `[Task #${i+1}] Title: "${t.title}"\nDomain: ${t.domain}\nStatus: ${t.status}\nPriority: ${t.priority}\nDue Date: ${t.due_date || "No deadline"}\nDescription: ${t.description || "None"}`).join("\n\n"),
+          ].join("\n\n");
 
-        // 3. Ask Gemini to answer the user's question using this context
-        const RAG_SYSTEM_PROMPT = `You are R2D's semantic search and question answering engine.
+          // 3. Ask Gemini to answer the user's question using this context
+          const RAG_SYSTEM_PROMPT = `You are R2D's semantic search and question answering engine.
 Answer the user's question based strictly on the provided user database context.
 Be direct, helpful, and answer in a friendly, conversational tone in the user's language.
 If the database context does not contain the answer, politely say so. Do not hallucinate or make up facts.`;
 
-        const responseRAG = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: [
-            { text: contextStr },
-            { text: `User question: "${queryText}"` }
-          ],
-          config: {
-            systemInstruction: RAG_SYSTEM_PROMPT,
-            temperature: 0.2,
-            maxOutputTokens: 800,
-            thinkingConfig: { thinkingBudget: 0 },
-          },
-        });
+          const responseRAG = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [
+              { text: contextStr },
+              { text: `User question: "${queryText}"` }
+            ],
+            config: {
+              systemInstruction: RAG_SYSTEM_PROMPT,
+              temperature: 0.2,
+              maxOutputTokens: 800,
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          });
 
-        let answer = "";
-        try {
-          answer = responseRAG.text?.trim() || "";
-        } catch {
-          const parts = responseRAG?.candidates?.[0]?.content?.parts;
-          if (parts) {
-            answer = parts
-              .filter((p: any) => p.text && !p.thought)
-              .map((p: any) => p.text)
-              .join("")
-              .trim();
+          let answer = "";
+          try {
+            answer = responseRAG.text?.trim() || "";
+          } catch {
+            const parts = responseRAG?.candidates?.[0]?.content?.parts;
+            if (parts) {
+              answer = parts
+                .filter((p: any) => p.text && !p.thought)
+                .map((p: any) => p.text)
+                .join("")
+                .trim();
+            }
           }
+
+          // Update the result data with the generated answer
+          act.data = {
+            query: queryText,
+            answer: answer || "未找到相关记录。"
+          };
+          act.message = answer || "查询完成";
+          break;
         }
 
-        // 4. Update the result data with the generated answer
-        result.data = {
-          query: queryText,
-          answer: answer || "未找到相关记录。"
-        };
-        // Update confirmation message
-        result.message = answer || "查询完成";
-        break;
+        default:
+          break;
       }
 
-      default:
-        // UNKNOWN — just save the result
-        break;
+      if (act.message) {
+        confirmMessages.push(act.message);
+      }
     }
+
+    const finalResult = {
+      action: Array.isArray(result) ? "MULTIPLE" : result.action,
+      data: Array.isArray(result) ? result.map(r => r.data) : result.data,
+      message: confirmMessages.join("\n\n") || "处理完成",
+    };
 
     // 5. Mark as done
     await supabase
       .from("messages")
       .update({
         status: "done",
-        result,
+        result: finalResult,
         processed_at: new Date().toISOString(),
       })
       .eq("id", message_id);
 
-    return new Response(JSON.stringify({ success: true, result }), {
+    return new Response(JSON.stringify({ success: true, result: finalResult }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
