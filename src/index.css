@@ -455,10 +455,15 @@ body {
 }
 
 .next-up-card__date-label {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--accent-primary);
-  opacity: 0.7;
+  background: var(--accent-primary-medium);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  letter-spacing: 0.02em;
 }
 
 .next-up-card__countdown {
