@@ -557,8 +557,77 @@ export default function RemindersView() {
 
   return (
     <div className="animate-fade-in">
+      {/* Overdue Section */}
+      {overdueItems.length > 0 && (
+        <div className="accordion-section overdue-section">
+          <button
+            className="accordion-header"
+            onClick={() => setShowOverdue(!showOverdue)}
+            style={{ color: 'var(--accent-danger)' }}
+          >
+            <span className="accordion-header__label">
+              <span>⚠️ 逾期未完成 ({overdueItems.length})</span>
+            </span>
+            <ChevronDown
+              size={16}
+              className={`accordion-chevron ${showOverdue ? 'accordion-chevron--open' : ''}`}
+            />
+          </button>
+          {showOverdue && (
+            <div className="accordion-content">
+              {overdueItems.map(r => (
+                <ReminderItem key={r.id} reminder={r} groupKey="overdue" />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Selected Day Details Section */}
+      <div className="details-header">
+        <span className="details-header__title">{formattedSelectedDate}</span>
+        <span className="details-header__count">{totalSchedulesCount} 项日程</span>
+      </div>
+
+      {/* Active items on selected day */}
+      {activeOnSelectedDay.length > 0 ? (
+        <div className="day-reminders-list" style={{ marginBottom: 'var(--space-md)' }}>
+          {activeOnSelectedDay.map((r, i) => (
+            <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
+              <ReminderItem reminder={r} groupKey={isToday(selectedDate) ? 'today' : isTomorrow(selectedDate) ? 'tomorrow' : 'later'} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-day-state" style={{ textAlign: 'center', padding: 'var(--space-md) 0', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-md)' }}>
+          ☕ 当天无未完成日程
+        </div>
+      )}
+
+      {/* Completed items on selected day */}
+      {completedOnSelectedDay.length > 0 && (
+        <div className="completed-section" style={{ marginTop: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+          <button
+            className={`completed-section__header ${showCompleted ? 'completed-section__header--open' : ''}`}
+            onClick={toggleShowCompleted}
+          >
+            <span className="completed-section__label">
+              已完成 ({completedOnSelectedDay.length})
+            </span>
+            <ChevronDown size={16} className="completed-section__chevron" />
+          </button>
+          {showCompleted && (
+            <div className="completed-section__list">
+              {completedOnSelectedDay.map(r => (
+                <ReminderItem key={r.id} reminder={r} groupKey="completed" />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Calendar Card */}
-      <div className="calendar-container">
+      <div className="calendar-container" style={{ marginTop: 'var(--space-md)' }}>
         <div className="calendar-header">
           <span className="calendar-header__title">{headerStr}</span>
           <div className="calendar-header__nav">
@@ -629,75 +698,6 @@ export default function RemindersView() {
           })}
         </div>
       </div>
-
-      {/* Overdue Section */}
-      {overdueItems.length > 0 && (
-        <div className="accordion-section overdue-section">
-          <button
-            className="accordion-header"
-            onClick={() => setShowOverdue(!showOverdue)}
-            style={{ color: 'var(--accent-danger)' }}
-          >
-            <span className="accordion-header__label">
-              <span>⚠️ 逾期未完成 ({overdueItems.length})</span>
-            </span>
-            <ChevronDown
-              size={16}
-              className={`accordion-chevron ${showOverdue ? 'accordion-chevron--open' : ''}`}
-            />
-          </button>
-          {showOverdue && (
-            <div className="accordion-content">
-              {overdueItems.map(r => (
-                <ReminderItem key={r.id} reminder={r} groupKey="overdue" />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Selected Day Details Section */}
-      <div className="details-header">
-        <span className="details-header__title">{formattedSelectedDate}</span>
-        <span className="details-header__count">{totalSchedulesCount} 项日程</span>
-      </div>
-
-      {/* Active items on selected day */}
-      {activeOnSelectedDay.length > 0 ? (
-        <div className="day-reminders-list">
-          {activeOnSelectedDay.map((r, i) => (
-            <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
-              <ReminderItem reminder={r} groupKey={isToday(selectedDate) ? 'today' : isTomorrow(selectedDate) ? 'tomorrow' : 'later'} />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="empty-day-state" style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
-          ☕ 当天无未完成日程
-        </div>
-      )}
-
-      {/* Completed items on selected day */}
-      {completedOnSelectedDay.length > 0 && (
-        <div className="completed-section" style={{ marginTop: 'var(--space-lg)' }}>
-          <button
-            className={`completed-section__header ${showCompleted ? 'completed-section__header--open' : ''}`}
-            onClick={toggleShowCompleted}
-          >
-            <span className="completed-section__label">
-              已完成 ({completedOnSelectedDay.length})
-            </span>
-            <ChevronDown size={16} className="completed-section__chevron" />
-          </button>
-          {showCompleted && (
-            <div className="completed-section__list">
-              {completedOnSelectedDay.map(r => (
-                <ReminderItem key={r.id} reminder={r} groupKey="completed" />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* No Date Items Section */}
       {noDateItems.length > 0 && (
