@@ -27,7 +27,6 @@ export default function TasksView() {
   const [activeTaskMenu, setActiveTaskMenu] = useState(null);
 
   const [expandedIds, setExpandedIds] = useState(new Set());
-  const [newTitle, setNewTitle] = useState('');
   const [childInputs, setChildInputs] = useState({});
   const [showArchive, setShowArchive] = useState(false);
 
@@ -113,16 +112,6 @@ export default function TasksView() {
     if (isToday(date)) return '今天截止';
     if (isTomorrow(date)) return '明天截止';
     return format(date, 'M月d日 HH:mm');
-  };
-
-  const handleTopLevelSubmit = (e) => {
-    e.preventDefault();
-    const val = newTitle.trim();
-    if (!val) return;
-    
-    const domain = taskActiveDomain === 'work' ? 'work' : 'personal';
-    addTask(val, null, domain, null, 'medium', null, null);
-    setNewTitle('');
   };
 
   const renderInlineAddInput = (parentId) => {
@@ -486,45 +475,45 @@ export default function TasksView() {
         ) : (
           completedTasks.length === 0 && (
             <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: 'var(--border-subtle)' }}>
-              ☕ 当前分类下暂无待办任务，在下方输入内容开始创建
+              ☕ 当前分类下暂无待办任务，点击下方加号开始创建
             </div>
           )
         )}
 
-        {/* 2. Top-level simple add form (Moved below active tasks list) */}
-        <form onSubmit={handleTopLevelSubmit} style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '6px', marginBottom: '6px' }}>
-          <input
-            type="text"
-            className="form-input"
-            style={{
-              flex: 1,
-              fontSize: 'var(--font-size-sm)',
-              padding: '8px 14px',
-              borderRadius: 'var(--radius-md)',
-              border: 'var(--border-subtle)',
-              background: 'var(--bg-hover)'
-            }}
-            placeholder="添加新任务..."
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
+        {/* Add Task Button with a Plus Sign */}
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0 6px 0' }}>
           <button
-            type="submit"
+            onClick={() => {
+              setEditingTask(null);
+              setTaskModalOpen(true);
+            }}
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '46px',
+              height: '46px',
+              borderRadius: '50%',
               background: 'var(--accent-primary)',
               color: 'white',
               border: 'none',
-              padding: '0 20px',
-              borderRadius: 'var(--radius-md)',
               cursor: 'pointer',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '600',
-              boxShadow: 'var(--shadow-xs)'
+              boxShadow: '0 4px 12px rgba(var(--accent-primary-rgb), 0.3)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1) translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(var(--accent-primary-rgb), 0.45)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1) translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(var(--accent-primary-rgb), 0.3)';
+            }}
+            title="添加新任务"
           >
-            添加
+            <Plus size={24} strokeWidth={2.5} />
           </button>
-        </form>
+        </div>
 
         {/* Completed Tasks (Archive) Section — Collapsed by default */}
         {completedTasks.length > 0 && (
