@@ -478,7 +478,7 @@ function CompactReminderItem({ reminder }) {
   );
 }
 
-export default function RemindersView() {
+export default function RemindersView({ minimal = false }) {
   const { reminders, tasks, projects, showCompleted, toggleShowCompleted } = useStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -509,9 +509,12 @@ export default function RemindersView() {
 
   const active = useMemo(() => combinedItems.filter(r => !r.completed), [combinedItems]);
 
+  const todayDate = useMemo(() => new Date(), []);
+  const displayDate = minimal ? todayDate : selectedDate;
+
   const selectedDayItems = useMemo(() => {
-    return combinedItems.filter(item => isReminderOccurOnDate(item, selectedDate));
-  }, [combinedItems, selectedDate]);
+    return combinedItems.filter(item => isReminderOccurOnDate(item, displayDate));
+  }, [combinedItems, displayDate]);
 
   const activeOnSelectedDay = useMemo(() => {
     return selectedDayItems.filter(item => !item.completed);
@@ -551,9 +554,36 @@ export default function RemindersView() {
   const headerStr = `${year}年${month}月`;
 
   const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  const formattedSelectedDate = `${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日 · ${dayNames[selectedDate.getDay()]}`;
+  const formattedSelectedDate = `${displayDate.getMonth() + 1}月${displayDate.getDate()}日 · ${dayNames[displayDate.getDay()]}`;
 
   const totalSchedulesCount = activeOnSelectedDay.length + completedOnSelectedDay.length;
+
+  if (minimal) {
+    return (
+      <div className="animate-fade-in">
+        {/* Selected Day Details Section */}
+        <div className="details-header" style={{ marginTop: 0 }}>
+          <span className="details-header__title">今日待办</span>
+          <span className="details-header__count">{activeOnSelectedDay.length} 项</span>
+        </div>
+
+        {/* Active items on selected day */}
+        {activeOnSelectedDay.length > 0 ? (
+          <div className="day-reminders-list">
+            {activeOnSelectedDay.map((r, i) => (
+              <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
+                <ReminderItem reminder={r} groupKey="today" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-day-state" style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
+            ☕ 今日无待办日程
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in">

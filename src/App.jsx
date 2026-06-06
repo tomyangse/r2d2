@@ -77,15 +77,7 @@ export default function App() {
         return <TasksView />;
       case 'all':
       default:
-        return (
-          <>
-            <RemindersView />
-            <hr className="view-divider" />
-            <ShoppingList />
-            <hr className="view-divider" />
-            <NotesView />
-          </>
-        );
+        return <RemindersView minimal={true} />;
     }
   };
 
@@ -94,7 +86,7 @@ export default function App() {
       <Header />
       <PushBanner />
       <AiAnswerCard />
-      {(activeTab === 'all' || activeTab === 'reminders') && <NextUpCard />}
+      {activeTab === 'reminders' && <NextUpCard />}
       <main className="main-content">
         <MessageStatus messages={pendingMessages} />
         {renderContent()}
