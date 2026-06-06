@@ -10,6 +10,10 @@ export const useStore = create((set, get) => ({
   shoppingItems: [],
   notes: [],
   messages: [],
+  projects: [],
+  tasks: [],
+  taskActiveDomain: 'personal',
+  taskViewMode: 'kanban',
   isProcessing: false,
   toast: null,
   showCompleted: false,
@@ -39,6 +43,8 @@ export const useStore = create((set, get) => ({
       shoppingItems: [],
       notes: [],
       messages: [],
+      projects: [],
+      tasks: [],
     });
   },
 
@@ -120,11 +126,13 @@ export const useStore = create((set, get) => ({
 
   loadAll: async () => {
     try {
-      const [remindersRes, shoppingRes, messagesRes, notesRes] = await Promise.all([
+      const [remindersRes, shoppingRes, messagesRes, notesRes, projectsRes, tasksRes] = await Promise.all([
         supabase.from('reminders').select('*').order('created_at', { ascending: false }),
         supabase.from('shopping_items').select('*').order('created_at', { ascending: false }),
         supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('notes').select('*').order('created_at', { ascending: false }),
+        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+        supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       ]);
 
       const updates = {};
@@ -132,6 +140,8 @@ export const useStore = create((set, get) => ({
       if (shoppingRes.data) updates.shoppingItems = shoppingRes.data;
       if (messagesRes.data) updates.messages = messagesRes.data;
       if (notesRes.data) updates.notes = notesRes.data;
+      if (projectsRes.data) updates.projects = projectsRes.data;
+      if (tasksRes.data) updates.tasks = tasksRes.data;
 
       set(updates);
     } catch (e) {
@@ -216,8 +226,32 @@ export const useStore = create((set, get) => ({
       )
       .subscribe();
 
+    // Projects channel — live updates
+    const projectsChannel = supabase
+      .channel('projects-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        () => {
+          get().refreshProjects();
+        }
+      )
+      .subscribe();
+
+    // Tasks channel — live updates
+    const tasksChannel = supabase
+      .channel('tasks-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        () => {
+          get().refreshTasks();
+        }
+      )
+      .subscribe();
+
     set({
-      realtimeChannels: [messagesChannel, remindersChannel, shoppingChannel, notesChannel],
+      realtimeChannels: [messagesChannel, remindersChannel, shoppingChannel, notesChannel, projectsChannel, tasksChannel],
     });
   },
 
@@ -232,7 +266,13 @@ export const useStore = create((set, get) => ({
   // ==================================
 
   refreshData: async () => {
-    await Promise.all([get().refreshReminders(), get().refreshShopping(), get().refreshNotes()]);
+    await Promise.all([
+      get().refreshReminders(),
+      get().refreshShopping(),
+      get().refreshNotes(),
+      get().refreshProjects(),
+      get().refreshTasks()
+    ]);
   },
 
   refreshReminders: async () => {
@@ -257,6 +297,22 @@ export const useStore = create((set, get) => ({
       .select('*')
       .order('created_at', { ascending: false });
     if (data) set({ notes: data });
+  },
+
+  refreshProjects: async () => {
+    const { data } = await supabase
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) set({ projects: data });
+  },
+
+  refreshTasks: async () => {
+    const { data } = await supabase
+      .from('tasks')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) set({ tasks: data });
   },
 
   // ==================================
@@ -519,5 +575,177 @@ export const useStore = create((set, get) => ({
 
     set({ telegramStatus: { linked: false } });
     get().showToast('success', 'Telegram 已解绑');
+  },
+
+  // --- Projects & Tasks Setters & CRUD ---
+  setTaskActiveDomain: (domain) => set({ taskActiveDomain: domain }),
+  setTaskViewMode: (mode) => set({ taskViewMode: mode }),
+
+  addProject: async (title, description, domain, colorTheme = 'indigo', icon = 'Folder') => {
+    const user = get().user;
+    if (!user) return;
+
+    const newProj = {
+      title,
+      description,
+      domain,
+      color_theme: colorTheme,
+      icon,
+      user_id: user.id
+    };
+
+    // Optimistic Update
+    const tempId = crypto.randomUUID();
+    const tempProj = { ...newProj, id: tempId, is_completed: false, created_at: new Date().toISOString() };
+    set(state => ({ projects: [tempProj, ...state.projects] }));
+
+    const { error } = await supabase.from('projects').insert(newProj);
+    if (error) {
+      console.error('Add project error:', error);
+      get().showToast('error', '创建项目失败，请重试');
+      get().refreshProjects();
+    } else {
+      get().showToast('success', '项目已创建');
+    }
+  },
+
+  updateProject: async (id, updates) => {
+    set(state => ({
+      projects: state.projects.map(p => p.id === id ? { ...p, ...updates } : p)
+    }));
+
+    const { error } = await supabase.from('projects').update(updates).eq('id', id);
+    if (error) {
+      console.error('Update project error:', error);
+      get().showToast('error', '更新项目失败');
+      get().refreshProjects();
+    } else {
+      get().showToast('success', '项目已更新');
+    }
+  },
+
+  deleteProject: async (id) => {
+    set(state => ({
+      projects: state.projects.filter(p => p.id !== id),
+      tasks: state.tasks.filter(t => t.project_id !== id) // Cascade locally
+    }));
+
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (error) {
+      console.error('Delete project error:', error);
+      get().showToast('error', '删除项目失败');
+      get().refreshProjects();
+      get().refreshTasks();
+    } else {
+      get().showToast('success', '项目已删除');
+    }
+  },
+
+  addTask: async (title, description, domain, projectId = null, priority = 'medium', dueDate = null) => {
+    const user = get().user;
+    if (!user) return;
+
+    const newTask = {
+      title,
+      description,
+      domain,
+      project_id: projectId,
+      priority,
+      due_date: dueDate,
+      status: 'todo',
+      user_id: user.id
+    };
+
+    // Optimistic Update
+    const tempId = crypto.randomUUID();
+    const tempTask = { ...newTask, id: tempId, created_at: new Date().toISOString() };
+    set(state => ({ tasks: [tempTask, ...state.tasks] }));
+
+    const { error } = await supabase.from('tasks').insert(newTask);
+    if (error) {
+      console.error('Add task error:', error);
+      get().showToast('error', '添加任务失败，请重试');
+      get().refreshTasks();
+    } else {
+      get().showToast('success', '任务已添加');
+    }
+  },
+
+  updateTask: async (id, updates) => {
+    set(state => ({
+      tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+    }));
+
+    const { error } = await supabase.from('tasks').update(updates).eq('id', id);
+    if (error) {
+      console.error('Update task error:', error);
+      get().showToast('error', '更新任务失败');
+      get().refreshTasks();
+    }
+  },
+
+  deleteTask: async (id) => {
+    set(state => ({
+      tasks: state.tasks.filter(t => t.id !== id)
+    }));
+
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) {
+      console.error('Delete task error:', error);
+      get().showToast('error', '删除任务失败');
+      get().refreshTasks();
+    } else {
+      get().showToast('success', '任务已删除');
+    }
+  },
+
+  toggleTaskStatus: async (id) => {
+    const task = get().tasks.find(t => t.id === id);
+    if (!task) return;
+
+    // Cycle status: todo -> in_progress -> completed -> todo
+    let newStatus = 'todo';
+    let completedAt = null;
+
+    if (task.status === 'todo') {
+      newStatus = 'in_progress';
+    } else if (task.status === 'in_progress') {
+      newStatus = 'completed';
+      completedAt = new Date().toISOString();
+    }
+
+    set(state => ({
+      tasks: state.tasks.map(t =>
+        t.id === id ? { ...t, status: newStatus, completed_at: completedAt } : t
+      )
+    }));
+
+    const { error } = await supabase.from('tasks')
+      .update({ status: newStatus, completed_at: completedAt })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Toggle task status error:', error);
+      get().refreshTasks();
+    } else {
+      const toastMsg = newStatus === 'completed' ? '任务已完成'
+        : newStatus === 'in_progress' ? '任务进行中'
+        : '任务已重置为待办';
+      
+      // If completed, provide undo option
+      if (newStatus === 'completed') {
+        get().showToast('success', toastMsg, async () => {
+          // Undo action: reset to in_progress
+          set(state => ({
+            tasks: state.tasks.map(t =>
+              t.id === id ? { ...t, status: 'in_progress', completed_at: null } : t
+            )
+          }));
+          await supabase.from('tasks').update({ status: 'in_progress', completed_at: null }).eq('id', id);
+        });
+      } else {
+        get().showToast('success', toastMsg);
+      }
+    }
   },
 }));

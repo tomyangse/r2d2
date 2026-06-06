@@ -116,7 +116,7 @@ const GROUP_LABELS = {
  * - tomorrow: no check circle, only menu
  */
 function ReminderItem({ reminder, groupKey }) {
-  const { toggleReminder, deleteReminder, postponeReminder } = useStore();
+  const { toggleReminder, deleteReminder, postponeReminder, toggleTaskStatus, deleteTask, projects } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const menuRef = useRef(null);
@@ -125,11 +125,14 @@ function ReminderItem({ reminder, groupKey }) {
     ? format(parseISO(reminder.datetime), 'HH:mm')
     : null;
 
+  const isAllDayTask = reminder.isTask && (timeStr === '00:00' || timeStr === '23:59' || !reminder.datetime.includes('T'));
+
   const isPending = !reminder.completed && reminder.datetime && isPast(parseISO(reminder.datetime));
   const isFuture = groupKey === 'tomorrow' || (groupKey === 'today' && !isPending);
-  const status = !reminder.completed ? getStatusBadge(reminder.datetime, groupKey) : null;
+  const status = !reminder.completed && !reminder.isTask ? getStatusBadge(reminder.datetime, groupKey) : null;
 
   const handleEdit = () => {
+    if (reminder.isTask) return;
     setMenuOpen(false);
     setEditOpen(true);
   };
@@ -146,21 +149,45 @@ function ReminderItem({ reminder, groupKey }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [menuOpen]);
 
+  const taskClass = reminder.isTask ? `reminder-item--task-${reminder.priority}` : '';
+  const taskBorderColor = reminder.isTask
+    ? (reminder.priority === 'high' ? '#e05252' : reminder.priority === 'medium' ? '#e6a817' : '#c0c0d0')
+    : null;
+
+  // Resolve project info
+  const project = reminder.isTask && projects?.find(p => p.id === reminder.projectId);
+  const domainLabel = reminder.domain === 'work' ? '工作' : reminder.domain === 'family' ? '家庭' : '个人';
+  const tagLabel = project ? `${domainLabel} · ${project.title}` : domainLabel;
+  const themeColor = project?.color_theme || (reminder.domain === 'work' ? 'indigo' : reminder.domain === 'family' ? 'rose' : 'emerald');
+
   return (
     <div
-      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isPending ? 'reminder-item--pending' : ''} ${menuOpen ? 'reminder-item--menu-open' : ''}`}
+      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isPending && !reminder.isTask ? 'reminder-item--pending' : ''} ${menuOpen ? 'reminder-item--menu-open' : ''} ${taskClass}`}
+      style={reminder.isTask ? { borderLeft: `3px solid ${taskBorderColor}` } : {}}
     >
-      <div className="reminder-item__time-col">
-        {timeStr ? (
+      <div className="reminder-item__time-col" style={reminder.isTask ? { minWidth: '65px' } : {}}>
+        {reminder.isTask ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <span style={{ fontSize: '1.1rem' }}>🎯</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontWeight: '600' }}>
+              {isAllDayTask ? '全天' : `${timeStr}`}
+            </span>
+          </div>
+        ) : timeStr ? (
           <span className={`reminder-item__time ${isPending ? 'reminder-item__time--pending' : ''}`}>{timeStr}</span>
         ) : (
           <span className="reminder-item__dot" />
         )}
       </div>
-      {timeStr && <span className="reminder-item__time-divider" />}
+      {(timeStr || reminder.isTask) && <span className="reminder-item__time-divider" style={reminder.isTask ? { left: '80px' } : {}} />}
       <div className="reminder-item__content">
-        <div className="reminder-item__title">
-          {reminder.title}
+        <div className="reminder-item__title" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+          <span>{reminder.title}</span>
+          {reminder.isTask && (
+            <span className={`status-badge color-theme-${themeColor}`} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+              📁 {tagLabel}
+            </span>
+          )}
           {reminder.recurrence && (
             <span className="reminder-item__recurrence">
               {getRecurrenceLabel(reminder.recurrence)}
@@ -189,10 +216,10 @@ function ReminderItem({ reminder, groupKey }) {
       </div>
       <div className="reminder-item__actions">
         {/* Show check circle for pending items & today's items, but NOT for tomorrow */}
-        {!isFuture && !reminder.completed && (
+        {!isFuture && (
           <button
-            className="check-circle-btn"
-            onClick={() => toggleReminder(reminder.id)}
+            className={`check-circle-btn ${reminder.completed ? 'check-circle-btn--checked' : ''}`}
+            onClick={() => reminder.isTask ? toggleTaskStatus(reminder.id) : toggleReminder(reminder.id)}
             aria-label="Mark complete"
           >
             <Check size={14} />
@@ -208,7 +235,21 @@ function ReminderItem({ reminder, groupKey }) {
           </button>
           {menuOpen && (
             <div className="dropdown-menu">
-              {isPending ? (
+              {reminder.isTask ? (
+                <>
+                  <button className="dropdown-menu__item" onClick={() => { toggleTaskStatus(reminder.id); setMenuOpen(false); }}>
+                    <Check size={14} />
+                    <span>{reminder.completed ? '设为待办' : '完成任务'}</span>
+                  </button>
+                  <button
+                    className="dropdown-menu__item dropdown-menu__item--danger"
+                    onClick={() => { deleteTask(reminder.id); setMenuOpen(false); }}
+                  >
+                    <Trash2 size={14} />
+                    <span>删除任务</span>
+                  </button>
+                </>
+              ) : isPending ? (
                 <>
                   {/* Pending confirmation menu */}
                   <button className="dropdown-menu__item" onClick={() => { toggleReminder(reminder.id); setMenuOpen(false); }}>
@@ -308,11 +349,26 @@ function CompactReminderItem({ reminder }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [menuOpen]);
 
+  const { toggleTaskStatus, deleteTask, projects } = useStore();
+  
+  // Resolve project info for tasks
+  const project = reminder.isTask && projects?.find(p => p.id === reminder.projectId);
+  const domainLabel = reminder.domain === 'work' ? '工作' : reminder.domain === 'family' ? '家庭' : '个人';
+  const tagLabel = project ? `${domainLabel} · ${project.title}` : domainLabel;
+  const themeColor = project?.color_theme || (reminder.domain === 'work' ? 'indigo' : reminder.domain === 'family' ? 'rose' : 'emerald');
+
   return (
-    <div className={`compact-item ${reminder.completed ? 'compact-item--completed' : ''}`} style={{ position: 'relative', zIndex: menuOpen ? 60 : 'auto' }}>
+    <div className={`compact-item ${reminder.completed ? 'compact-item--completed' : ''} ${reminder.isTask ? `compact-item--task-${reminder.priority}` : ''}`} style={{ position: 'relative', zIndex: menuOpen ? 60 : 'auto', borderLeft: reminder.isTask ? `2px solid ${reminder.priority === 'high' ? '#e05252' : reminder.priority === 'medium' ? '#e6a817' : '#c0c0d0'}` : '' }}>
       {dateLabel && <span className="compact-item__date">{dateLabel}</span>}
-      {timeLabel && <span className="compact-item__time">{timeLabel}</span>}
-      <span className="compact-item__title">{reminder.title}</span>
+      {timeLabel && <span className="compact-item__time">{reminder.isTask ? '🎯' : timeLabel}</span>}
+      <span className="compact-item__title" style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span>{reminder.title}</span>
+        {reminder.isTask && (
+          <span className={`status-badge color-theme-${themeColor}`} style={{ fontSize: '9px', padding: '0px 4px', borderRadius: '3px', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+            {tagLabel}
+          </span>
+        )}
+      </span>
       {reminder.location && (
         <a
           className="compact-item__location"
@@ -340,7 +396,21 @@ function CompactReminderItem({ reminder }) {
         </button>
         {menuOpen && (
           <div className="dropdown-menu">
-            {reminder.recurrence ? (
+            {reminder.isTask ? (
+              <>
+                <button className="dropdown-menu__item" onClick={() => { toggleTaskStatus(reminder.id); setMenuOpen(false); }}>
+                  <Check size={14} />
+                  <span>{reminder.completed ? '设为待办' : '完成任务'}</span>
+                </button>
+                <button
+                  className="dropdown-menu__item dropdown-menu__item--danger"
+                  onClick={() => { deleteTask(reminder.id); setMenuOpen(false); }}
+                >
+                  <Trash2 size={14} />
+                  <span>删除任务</span>
+                </button>
+              </>
+            ) : reminder.recurrence ? (
               <>
                 <button className="dropdown-menu__item" onClick={handleEdit}>
                   <Pencil size={14} />
@@ -384,14 +454,36 @@ function CompactReminderItem({ reminder }) {
 }
 
 export default function RemindersView() {
-  const { reminders, showCompleted, toggleShowCompleted } = useStore();
+  const { reminders, tasks, projects, showCompleted, toggleShowCompleted } = useStore();
   const [showLater, setShowLater] = useState(false);
 
-  const active = reminders.filter(r => !r.completed);
-  const completed = reminders.filter(r => r.completed);
+  // Normalize tasks into reminder-like objects
+  const mappedTasks = useMemo(() => {
+    return (tasks || [])
+      .filter(t => t.due_date)
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        datetime: t.due_date,
+        notes: t.description,
+        completed: t.status === 'completed',
+        isTask: true,
+        projectId: t.project_id,
+        domain: t.domain,
+        priority: t.priority,
+        status: t.status,
+      }));
+  }, [tasks]);
+
+  const combinedItems = useMemo(() => {
+    return [...(reminders || []), ...mappedTasks];
+  }, [reminders, mappedTasks]);
+
+  const active = useMemo(() => combinedItems.filter(r => !r.completed), [combinedItems]);
+  const completed = useMemo(() => combinedItems.filter(r => r.completed), [combinedItems]);
   const groups = useMemo(() => groupReminders(active), [active]);
 
-  const hasAny = reminders.length > 0;
+  const hasAny = combinedItems.length > 0;
 
   // Groups that get full card rendering
   const detailGroups = ['overdue', 'today', 'tomorrow'];

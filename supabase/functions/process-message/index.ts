@@ -9,7 +9,7 @@ const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
-const SYSTEM_PROMPT = `You are R2D, an AI assistant that manages reminders/schedules, shopping lists, personal notes/memos, and answers knowledge queries based on past records.
+const SYSTEM_PROMPT = `You are R2D, an AI assistant that manages reminders/schedules, shopping lists, personal notes/memos, projects & tasks, and answers knowledge queries based on past records.
 
 Analyze the user's message and return a JSON response.
 
@@ -22,24 +22,33 @@ Possible actions:
 6. DELETE_REMINDER - Delete a reminder
 7. DELETE_SHOPPING - Delete shopping item(s)
 8. DELETE_NOTE - Delete a note
-9. QUERY_KNOWLEDGE - Search user's database (notes, reminders, schedules) to answer their question (e.g. "WiFi密码是多少", "我记过关于王总的什么吗")
-10. UNKNOWN - Cannot understand
+9. ADD_PROJECT - Create a new project under a domain (personal, family, work)
+10. ADD_TASK - Add a task under a domain (personal, family, work), optionally linking it to a project
+11. COMPLETE_TASK - Mark a task as completed/done
+12. DELETE_TASK - Delete a task
+13. QUERY_KNOWLEDGE - Search user's database (notes, reminders, schedules, projects, tasks) to answer their question (e.g. "WiFi密码是多少", "我工作项目里下周有什么任务")
+14. UNKNOWN - Cannot understand
 
 Response format (valid JSON only, no markdown):
 {
-  "action": "ADD_REMINDER" | "ADD_SHOPPING" | "ADD_NOTE" | "COMPLETE_REMINDER" | "COMPLETE_SHOPPING" | "DELETE_REMINDER" | "DELETE_SHOPPING" | "DELETE_NOTE" | "QUERY_KNOWLEDGE" | "UNKNOWN",
+  "action": "ADD_REMINDER" | "ADD_SHOPPING" | "ADD_NOTE" | "COMPLETE_REMINDER" | "COMPLETE_SHOPPING" | "DELETE_REMINDER" | "DELETE_SHOPPING" | "DELETE_NOTE" | "ADD_PROJECT" | "ADD_TASK" | "COMPLETE_TASK" | "DELETE_TASK" | "QUERY_KNOWLEDGE" | "UNKNOWN",
   "data": {
-    "title": "string (for reminders, and also for notes. For notes, generate a short descriptive title)",
+    "title": "string (for reminders, notes, projects, and tasks. Generate a short descriptive title if not clear)",
+    "description": "string or null (for projects and tasks - description of the project/task)",
+    "domain": "personal" | "family" | "work" (for projects and tasks - default to personal if not specified),
+    "project_name": "string or null (for tasks - the title of the project to link this task to, if mentioned)",
+    "priority": "low" | "medium" | "high" (for tasks - default to medium),
+    "due_date": "ISO 8601 string or null (for tasks - deadline of the task)",
     "datetime": "ISO 8601 string or null (for reminders - the NEXT occurrence time)",
     "notes": "string or null (for reminders)",
-    "location": "string or null (for reminders - extract any location/address/place mentioned. Keep it as a clean address or place name suitable for map search, e.g. 'Alexanderplatz, Berlin' or '北京西站' or '123 Main St, NYC')",
+    "location": "string or null (for reminders - extract any location/address/place mentioned. Keep it as a clean address or place name suitable for map search)",
     "recurrence": "string or null (for reminders - recurrence pattern)",
     "items": [{"name": "string", "category": "string"}] (for shopping - MUST assign a category),
     "query": "string (for complete/delete actions, and for QUERY_KNOWLEDGE - natural language query)",
     "content": "string (for notes - the body of the note, cleaned up and formatted)",
-    "tags": ["string"] (for notes - dynamic tags. e.g., ["密码"], ["灵感"], ["备忘"], ["账单"], ["旅行"], ["生活"], ["工作"]),
-    "type": "sticky" | "checklist" | "rich" (for notes - "sticky" for short fragments/credentials/info under 100 chars, "checklist" for list notes, "rich" for long notes/diaries/meeting minutes),
-    "color_theme": "amber" | "indigo" | "rose" | "emerald" | "cyan" | "violet" (for notes - choose one depending on notes topic)
+    "tags": ["string"] (for notes - dynamic tags),
+    "type": "sticky" | "checklist" | "rich" (for notes),
+    "color_theme": "indigo" | "rose" | "emerald" | "amber" | "violet" | "cyan" (for notes and projects - choose a color theme depending on topic)
   },
   "message": "Brief friendly confirmation in the user's language"
 }
@@ -58,16 +67,18 @@ Examples:
 - "买苹果和两盒牛奶" → action: ADD_SHOPPING, items: [{"name": "苹果", "category": "果蔬"}, {"name": "牛奶", "category": "乳制品"}]
 - "记录一下：大门密码是 2580#" → action: ADD_NOTE, title: "🔑 大门密码", content: "2580#", type: "sticky", tags: ["密码"], color_theme: "amber"
 - "旅行打包清单：牙刷、充电线、护照" → action: ADD_NOTE, title: "🎒 旅行打包清单", content: "- 牙刷\n- 充电线\n- 护照", type: "checklist", tags: ["旅行", "清单"], color_theme: "cyan"
+- "帮我新建一个工作项目，叫『第二季度产品研发』" → action: ADD_PROJECT, data: { title: "第二季度产品研发", domain: "work", color_theme: "indigo" }
+- "把『撰写技术方案设计文档』加到工作项目的第二季度产品研发里，优先级高，下周一下午5点前完成" → action: ADD_TASK, data: { title: "撰写技术方案设计文档", domain: "work", project_name: "第二季度产品研发", priority: "high", due_date: "2026-06-08T17:00:00+02:00" }
+- "我完成了『撰写技术方案设计文档』任务" → action: COMPLETE_TASK, data: { query: "撰写技术方案设计文档" }
+- "删除任务『撰写技术方案设计文档』" → action: DELETE_TASK, data: { query: "撰写技术方案设计文档" }
 - "家里wifi密码是多少？" → action: QUERY_KNOWLEDGE, query: "家里wifi密码是多少？"
-- "我之前记录过关于王总会议的什么吗？" → action: QUERY_KNOWLEDGE, query: "我之前记录过关于王总会议的什么吗？"
+- "我这周在工作项目里还有什么要做的事？" → action: QUERY_KNOWLEDGE, query: "我这周在工作项目里还有什么要做的事？"
 - "下周我有什么安排？" → action: QUERY_KNOWLEDGE, query: "下周我有什么安排？"
 - "明天下午3点在星巴克见客户" → action: ADD_REMINDER, title: "见客户", datetime: "...", location: "星巴克"
-- "6月1号带孩子去Alexanderplatz看牙医" → action: ADD_REMINDER, title: "带孩子看牙医", datetime: "...", location: "Alexanderplatz"
-- "remind me dentist at Schönhauser Allee 10 at 3pm" → action: ADD_REMINDER, title: "Dentist", datetime: "...", location: "Schönhauser Allee 10"
 
 Rules:
 - Respond in the SAME LANGUAGE the user used
-- Route questions/queries about their recorded details, passwords, wifi, diary, schedules, or past meetings to QUERY_KNOWLEDGE
+- Route questions/queries about their recorded details, passwords, wifi, diary, schedules, projects, tasks, or past meetings to QUERY_KNOWLEDGE
 - ONLY output valid JSON
 
 Shopping categories (MUST use one of these exact values):
@@ -347,17 +358,98 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case "ADD_PROJECT": {
+        const { title, description, domain, color_theme, icon } = result.data;
+        await supabase.from("projects").insert({
+          title,
+          description: description || null,
+          domain: domain || "personal",
+          color_theme: color_theme || "indigo",
+          icon: icon || "Folder",
+          user_id: userId,
+        });
+        break;
+      }
+
+      case "ADD_TASK": {
+        const { title, description, domain, project_name, priority, due_date } = result.data;
+        let projectId = null;
+
+        if (project_name) {
+          const { data: proj } = await supabase
+            .from("projects")
+            .select("id")
+            .eq("user_id", userId)
+            .ilike("title", `%${project_name}%`)
+            .limit(1)
+            .maybeSingle();
+          if (proj) projectId = proj.id;
+        }
+
+        await supabase.from("tasks").insert({
+          title,
+          description: description || null,
+          domain: domain || "personal",
+          project_id: projectId,
+          priority: priority || "medium",
+          due_date: due_date || null,
+          status: "todo",
+          user_id: userId,
+        });
+        break;
+      }
+
+      case "COMPLETE_TASK": {
+        const query = result.data.query?.toLowerCase() || "";
+        const { data: tasks } = await supabase
+          .from("tasks")
+          .select("*")
+          .neq("status", "completed")
+          .eq("user_id", userId);
+
+        const match = tasks?.find((t: { title: string }) =>
+          t.title.toLowerCase().includes(query)
+        );
+        if (match) {
+          await supabase
+            .from("tasks")
+            .update({ status: "completed", completed_at: new Date().toISOString() })
+            .eq("id", match.id);
+        }
+        break;
+      }
+
+      case "DELETE_TASK": {
+        const query = result.data.query?.toLowerCase() || "";
+        const { data: tasks } = await supabase
+          .from("tasks")
+          .select("*")
+          .eq("user_id", userId);
+
+        const match = tasks?.find((t: { title: string }) =>
+          t.title.toLowerCase().includes(query)
+        );
+        if (match) {
+          await supabase.from("tasks").delete().eq("id", match.id);
+        }
+        break;
+      }
+
       case "QUERY_KNOWLEDGE": {
         const queryText = result.data.query || message.input;
 
-        // 1. Fetch user's knowledge base (all notes and reminders)
-        const [notesRes, remindersRes] = await Promise.all([
+        // 1. Fetch user's knowledge base (all notes, reminders, projects, tasks)
+        const [notesRes, remindersRes, projectsRes, tasksRes] = await Promise.all([
           supabase.from("notes").select("title, content, tags").eq("user_id", userId),
           supabase.from("reminders").select("title, datetime, notes").eq("user_id", userId),
+          supabase.from("projects").select("title, description, domain").eq("user_id", userId),
+          supabase.from("tasks").select("title, description, domain, status, priority, due_date").eq("user_id", userId),
         ]);
 
         const notes = notesRes.data || [];
         const reminders = remindersRes.data || [];
+        const projects = projectsRes.data || [];
+        const tasks = tasksRes.data || [];
 
         // 2. Format knowledge base as context string
         const contextStr = [
@@ -366,6 +458,10 @@ Deno.serve(async (req: Request) => {
           notes.map((n, i) => `[Note #${i+1}] Title: "${n.title}"\nTags: ${JSON.stringify(n.tags)}\nContent:\n${n.content}`).join("\n\n"),
           "=== REMINDERS & SCHEDULES ===",
           reminders.map((r, i) => `[Reminder #${i+1}] Title: "${r.title}"\nTime: ${r.datetime || "No time specified"}\nNotes: ${r.notes || "None"}`).join("\n\n"),
+          "=== PROJECTS ===",
+          projects.map((p, i) => `[Project #${i+1}] Title: "${p.title}"\nDomain: ${p.domain}\nDescription: ${p.description || "None"}`).join("\n\n"),
+          "=== TASKS ===",
+          tasks.map((t, i) => `[Task #${i+1}] Title: "${t.title}"\nDomain: ${t.domain}\nStatus: ${t.status}\nPriority: ${t.priority}\nDue Date: ${t.due_date || "No deadline"}\nDescription: ${t.description || "None"}`).join("\n\n"),
         ].join("\n\n");
 
         // 3. Ask Gemini to answer the user's question using this context

@@ -4,12 +4,13 @@ import { useStore } from '../store/useStore';
 import TelegramSettings from './TelegramSettings';
 
 export default function Header() {
-  const { activeTab, setActiveTab, reminders, shoppingItems, notes = [], user, signOut } = useStore();
+  const { activeTab, setActiveTab, reminders, shoppingItems, notes = [], tasks = [], user, signOut } = useStore();
   const [showTelegram, setShowTelegram] = useState(false);
 
   const pendingReminders = reminders.filter(r => !r.completed).length;
   const pendingItems = shoppingItems.filter(i => !i.checked).length;
   const notesCount = notes.length;
+  const pendingTasks = tasks.filter(t => t.status !== 'completed').length;
 
   return (
     <header className="header">
@@ -83,6 +84,14 @@ export default function Header() {
         >
           <span>记事</span>
           {notesCount > 0 && <span className="header__tab-badge">{notesCount}</span>}
+        </button>
+        <button
+          className={`header__tab ${activeTab === 'tasks' ? 'header__tab--active' : ''}`}
+          onClick={() => setActiveTab('tasks')}
+          aria-label="Tasks tab"
+        >
+          <span>看板</span>
+          {pendingTasks > 0 && <span className="header__tab-badge">{pendingTasks}</span>}
         </button>
       </nav>
     </header>

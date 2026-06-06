@@ -3,7 +3,7 @@ import { parseISO, isAfter, isToday, isTomorrow, differenceInMinutes, format } f
 import { useStore } from '../store/useStore';
 
 export default function NextUpCard() {
-  const { reminders } = useStore();
+  const { reminders, tasks } = useStore();
   const [now, setNow] = useState(new Date());
 
   // Update every minute for the countdown
@@ -12,13 +12,31 @@ export default function NextUpCard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Find the next upcoming uncompleted reminder
+  // Find the next upcoming uncompleted reminder or task deadline
   const nextUp = useMemo(() => {
-    const upcoming = reminders
-      .filter(r => r.datetime && !r.completed && isAfter(parseISO(r.datetime), now))
+    const mappedTasks = (tasks || [])
+      .filter(t => t.due_date && t.status !== 'completed')
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        datetime: t.due_date,
+        isTask: true,
+      }));
+
+    const upcoming = [...(reminders || [])]
+      .filter(r => r.datetime && !r.completed)
+      .map(r => ({
+        id: r.id,
+        title: r.title,
+        datetime: r.datetime,
+        isTask: false,
+      }))
+      .concat(mappedTasks)
+      .filter(item => isAfter(parseISO(item.datetime), now))
       .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+
     return upcoming[0] || null;
-  }, [reminders, now]);
+  }, [reminders, tasks, now]);
 
   if (!nextUp) return null;
 
@@ -50,8 +68,8 @@ export default function NextUpCard() {
   return (
     <div className="next-up-card">
       <div className="next-up-card__label">
-        <span className="next-up-card__label-icon">✨</span>
-        <span>下一件事</span>
+        <span className="next-up-card__label-icon">{nextUp.isTask ? '🎯' : '✨'}</span>
+        <span>{nextUp.isTask ? '任务截止' : '下一件事'}</span>
       </div>
       <div className="next-up-card__main">
         <span className="next-up-card__time">{timeStr}</span>

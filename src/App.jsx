@@ -10,6 +10,7 @@ import AuthPage from './components/AuthPage';
 import PushBanner from './components/PushBanner';
 import NotesView from './components/NotesView';
 import AiAnswerCard from './components/AiAnswerCard';
+import TasksView from './components/TasksView';
 import { useStore } from './store/useStore';
 import { supabase } from './lib/supabase';
 
@@ -72,6 +73,8 @@ export default function App() {
         return <ShoppingList />;
       case 'notes':
         return <NotesView />;
+      case 'tasks':
+        return <TasksView />;
       case 'all':
       default:
         return (
