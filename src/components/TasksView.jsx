@@ -475,41 +475,6 @@ export default function TasksView() {
         ))}
       </div>
 
-      {/* 2. Top-level simple add form */}
-      <form onSubmit={handleTopLevelSubmit} style={{ display: 'flex', gap: '8px', width: '100%', marginBottom: '4px' }}>
-        <input
-          type="text"
-          className="form-input"
-          style={{
-            flex: 1,
-            fontSize: 'var(--font-size-sm)',
-            padding: '8px 14px',
-            borderRadius: 'var(--radius-md)',
-            border: 'var(--border-subtle)',
-            background: 'var(--bg-hover)'
-          }}
-          placeholder="添加新任务..."
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-        />
-        <button
-          type="submit"
-          style={{
-            background: 'var(--accent-primary)',
-            color: 'white',
-            border: 'none',
-            padding: '0 20px',
-            borderRadius: 'var(--radius-md)',
-            cursor: 'pointer',
-            fontSize: 'var(--font-size-sm)',
-            fontWeight: '600',
-            boxShadow: 'var(--shadow-xs)'
-          }}
-        >
-          添加
-        </button>
-      </form>
-
       {/* 3. Tasks Tree List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         
@@ -521,10 +486,45 @@ export default function TasksView() {
         ) : (
           completedTasks.length === 0 && (
             <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: 'var(--border-subtle)' }}>
-              ☕ 当前分类下暂无待办任务，输入上方内容开始创建
+              ☕ 当前分类下暂无待办任务，在下方输入内容开始创建
             </div>
           )
         )}
+
+        {/* 2. Top-level simple add form (Moved below active tasks list) */}
+        <form onSubmit={handleTopLevelSubmit} style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '6px', marginBottom: '6px' }}>
+          <input
+            type="text"
+            className="form-input"
+            style={{
+              flex: 1,
+              fontSize: 'var(--font-size-sm)',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-md)',
+              border: 'var(--border-subtle)',
+              background: 'var(--bg-hover)'
+            }}
+            placeholder="添加新任务..."
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+          <button
+            type="submit"
+            style={{
+              background: 'var(--accent-primary)',
+              color: 'white',
+              border: 'none',
+              padding: '0 20px',
+              borderRadius: 'var(--radius-md)',
+              cursor: 'pointer',
+              fontSize: 'var(--font-size-sm)',
+              fontWeight: '600',
+              boxShadow: 'var(--shadow-xs)'
+            }}
+          >
+            添加
+          </button>
+        </form>
 
         {/* Completed Tasks (Archive) Section — Collapsed by default */}
         {completedTasks.length > 0 && (
