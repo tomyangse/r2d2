@@ -16,7 +16,7 @@ export default function Header() {
     <header className="header">
       {/* Top Row: Brand + Actions */}
       <div className="header__top-row">
-        <div className="header__brand">
+        <div className="header__brand" onClick={() => setActiveTab('all')}>
           <div className="header__logo">R2D</div>
           <div className="header__subtitle">AI Life Assistant</div>
         </div>
@@ -55,19 +55,20 @@ export default function Header() {
       {/* Tab Bar */}
       <nav className="header__tabs">
         <button
-          className={`header__tab ${activeTab === 'all' ? 'header__tab--active' : ''}`}
-          onClick={() => setActiveTab('all')}
-          aria-label="All tab"
-        >
-          <span>全部</span>
-        </button>
-        <button
           className={`header__tab ${activeTab === 'reminders' ? 'header__tab--active' : ''}`}
           onClick={() => setActiveTab('reminders')}
           aria-label="Reminders tab"
         >
           <span>日程</span>
           <span className="header__tab-badge">{pendingReminders}</span>
+        </button>
+        <button
+          className={`header__tab ${activeTab === 'tasks' ? 'header__tab--active' : ''}`}
+          onClick={() => setActiveTab('tasks')}
+          aria-label="Tasks tab"
+        >
+          <span>任务</span>
+          {pendingTasks > 0 && <span className="header__tab-badge">{pendingTasks}</span>}
         </button>
         <button
           className={`header__tab ${activeTab === 'shopping' ? 'header__tab--active' : ''}`}
@@ -84,14 +85,6 @@ export default function Header() {
         >
           <span>记事</span>
           {notesCount > 0 && <span className="header__tab-badge">{notesCount}</span>}
-        </button>
-        <button
-          className={`header__tab ${activeTab === 'tasks' ? 'header__tab--active' : ''}`}
-          onClick={() => setActiveTab('tasks')}
-          aria-label="Tasks tab"
-        >
-          <span>任务</span>
-          {pendingTasks > 0 && <span className="header__tab-badge">{pendingTasks}</span>}
         </button>
       </nav>
     </header>
