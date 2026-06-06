@@ -17,7 +17,8 @@ export default function TasksView() {
     setTaskActiveDomain, 
     toggleTaskStatus,
     deleteTask,
-    addTask
+    addTask,
+    updateTask
   } = useStore();
 
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -192,6 +193,7 @@ export default function TasksView() {
     // Resolve project title for tag display
     const project = projects.find(p => p.id === t.project_id);
     const parentTask = t.parent_id ? tasks.find(pt => pt.id === t.parent_id) : null;
+    const dateInputId = `date-input-${t.id}`;
 
     return (
       <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -272,18 +274,87 @@ export default function TasksView() {
                     borderRadius: '4px',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '2px',
-                    fontWeight: '600'
+                    gap: '4px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
                   }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    document.getElementById(dateInputId)?.showPicker();
+                  }}
+                  title="修改截止时间"
                 >
                   <Calendar size={10} />
-                  {dateLabel}
+                  <span>{dateLabel}</span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateTask(t.id, { due_date: null });
+                    }}
+                    style={{ 
+                      marginLeft: '2px', 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      fontSize: '8px',
+                      color: 'var(--text-tertiary)',
+                      background: 'rgba(0,0,0,0.05)',
+                      lineHeight: 1
+                    }}
+                    title="清除时间"
+                  >
+                    ×
+                  </span>
                 </span>
               )}
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
+            {/* Quick Calendar Picker */}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  document.getElementById(dateInputId)?.showPicker();
+                }}
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  color: t.due_date ? 'var(--accent-primary)' : 'var(--text-muted)', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  padding: '4px',
+                  borderRadius: '4px',
+                  transition: 'background 0.2s'
+                }}
+                title="设置截止时间"
+              >
+                <Calendar size={14} />
+              </button>
+              <input
+                id={dateInputId}
+                type="datetime-local"
+                value={t.due_date ? t.due_date.slice(0, 16) : ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  updateTask(t.id, { due_date: val ? new Date(val).toISOString() : null });
+                }}
+                style={{
+                  position: 'absolute',
+                  width: 0,
+                  height: 0,
+                  opacity: 0,
+                  pointerEvents: 'none',
+                  border: 'none',
+                  padding: 0
+                }}
+              />
+            </div>
+
             {/* Options Menu */}
             <div ref={activeTaskMenu === t.id ? taskMenuRef : null} style={{ position: 'relative' }}>
               <button
