@@ -579,6 +579,13 @@ body {
   opacity: 0.45;
 }
 
+.reminder-item--subdued {
+  opacity: 0.75;
+  background: var(--bg-hover) !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+
 .reminder-item--pending {
   border-left: 3px solid #E8A840;
 }

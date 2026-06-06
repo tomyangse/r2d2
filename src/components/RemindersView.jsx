@@ -140,7 +140,7 @@ function isReminderOccurOnDate(r, checkDate) {
  * - overdue/today past items: show "待确认" badge + check circle
  * - tomorrow: no check circle, only menu
  */
-function ReminderItem({ reminder, groupKey }) {
+function ReminderItem({ reminder, groupKey, subdued = false }) {
   const { toggleReminder, deleteReminder, postponeReminder, toggleTaskStatus, deleteTask, projects } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -187,7 +187,7 @@ function ReminderItem({ reminder, groupKey }) {
 
   return (
     <div
-      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isPending && !reminder.isTask ? 'reminder-item--pending' : ''} ${menuOpen ? 'reminder-item--menu-open' : ''} ${taskClass}`}
+      className={`reminder-item ${reminder.completed ? 'reminder-item--completed' : ''} ${isPending && !reminder.isTask ? 'reminder-item--pending' : ''} ${menuOpen ? 'reminder-item--menu-open' : ''} ${subdued ? 'reminder-item--subdued' : ''} ${taskClass}`}
       style={reminder.isTask ? { borderLeft: `3px solid ${taskBorderColor}` } : {}}
     >
       <div className="reminder-item__time-col" style={reminder.isTask ? { minWidth: '65px' } : {}}>
@@ -524,6 +524,17 @@ export default function RemindersView({ minimal = false }) {
     return selectedDayItems.filter(item => item.completed);
   }, [selectedDayItems]);
 
+  const tomorrowDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d;
+  }, []);
+
+  const activeOnTomorrow = useMemo(() => {
+    const tomorrowItems = combinedItems.filter(item => isReminderOccurOnDate(item, tomorrowDate));
+    return tomorrowItems.filter(item => !item.completed);
+  }, [combinedItems, tomorrowDate]);
+
   const overdueItems = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -560,27 +571,50 @@ export default function RemindersView({ minimal = false }) {
 
   if (minimal) {
     return (
-      <div className="animate-fade-in">
-        {/* Selected Day Details Section */}
-        <div className="details-header" style={{ marginTop: 0 }}>
-          <span className="details-header__title">今日待办</span>
-          <span className="details-header__count">{activeOnSelectedDay.length} 项</span>
+      <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Today's Section */}
+        <div>
+          <div className="details-header" style={{ marginTop: 0, marginBottom: '8px' }}>
+            <span className="details-header__title">今日待办</span>
+            <span className="details-header__count">{activeOnSelectedDay.length} 项</span>
+          </div>
+
+          {activeOnSelectedDay.length > 0 ? (
+            <div className="day-reminders-list">
+              {activeOnSelectedDay.map((r, i) => (
+                <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
+                  <ReminderItem reminder={r} groupKey="today" subdued={!r.isTask} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-day-state" style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)', background: 'var(--bg-hover)', borderRadius: 'var(--radius-lg)' }}>
+              ☕ 今日无待办日程
+            </div>
+          )}
         </div>
 
-        {/* Active items on selected day */}
-        {activeOnSelectedDay.length > 0 ? (
-          <div className="day-reminders-list">
-            {activeOnSelectedDay.map((r, i) => (
-              <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
-                <ReminderItem reminder={r} groupKey="today" />
-              </div>
-            ))}
+        {/* Tomorrow's Section */}
+        <div>
+          <div className="details-header" style={{ marginTop: 0, marginBottom: '8px' }}>
+            <span className="details-header__title" style={{ color: 'var(--text-secondary)' }}>明日日程预告</span>
+            <span className="details-header__count" style={{ color: 'var(--text-tertiary)' }}>{activeOnTomorrow.length} 项</span>
           </div>
-        ) : (
-          <div className="empty-day-state" style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
-            ☕ 今日无待办日程
-          </div>
-        )}
+
+          {activeOnTomorrow.length > 0 ? (
+            <div className="day-reminders-list" style={{ opacity: 0.65 }}>
+              {activeOnTomorrow.map((r, i) => (
+                <div key={r.id} style={{ animationDelay: `${i * 30}ms` }}>
+                  <ReminderItem reminder={r} groupKey="tomorrow" subdued={!r.isTask} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-day-state" style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', background: 'var(--bg-hover)', borderRadius: 'var(--radius-lg)', opacity: 0.65 }}>
+              ☕ 明日无安排日程
+            </div>
+          )}
+        </div>
       </div>
     );
   }
