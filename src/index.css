@@ -1937,6 +1937,9 @@ button:focus:not(:focus-visible) {
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .voice-btn:hover {

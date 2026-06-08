@@ -164,7 +164,7 @@ export default function VoiceButton({ onResult, disabled }) {
     if (pointerDownRef.current) stop();
   };
 
-  // Also listen for global pointerup in case finger moves off button
+  // Also listen for global pointerup/pointercancel in case finger moves off button or system interrupts
   useEffect(() => {
     const handleGlobalPointerUp = () => {
       if (pointerDownRef.current) {
@@ -172,7 +172,11 @@ export default function VoiceButton({ onResult, disabled }) {
       }
     };
     window.addEventListener('pointerup', handleGlobalPointerUp);
-    return () => window.removeEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
   }, [stop]);
 
   const formatDuration = (s) => {
@@ -189,6 +193,7 @@ export default function VoiceButton({ onResult, disabled }) {
         className={`voice-btn ${isRecording ? 'voice-btn--active' : ''}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         onContextMenu={(e) => e.preventDefault()}
         disabled={disabled}
