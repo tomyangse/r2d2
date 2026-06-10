@@ -513,7 +513,9 @@ export default function RemindersView({ minimal = false }) {
   const displayDate = minimal ? todayDate : selectedDate;
 
   const selectedDayItems = useMemo(() => {
-    return combinedItems.filter(item => isReminderOccurOnDate(item, displayDate));
+    return combinedItems
+      .filter(item => isReminderOccurOnDate(item, displayDate))
+      .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
   }, [combinedItems, displayDate]);
 
   const activeOnSelectedDay = useMemo(() => {
@@ -532,21 +534,25 @@ export default function RemindersView({ minimal = false }) {
 
   const activeOnTomorrow = useMemo(() => {
     const tomorrowItems = combinedItems.filter(item => isReminderOccurOnDate(item, tomorrowDate));
-    return tomorrowItems.filter(item => !item.completed);
+    return tomorrowItems
+      .filter(item => !item.completed)
+      .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
   }, [combinedItems, tomorrowDate]);
 
   const overdueItems = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return combinedItems.filter(item => {
-      if (item.completed || !item.datetime) return false;
-      if (item.recurrence) return false; // Recurring items shouldn't show in overdue
-      
-      const itemDate = parseISO(item.datetime);
-      const itemDay = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-      return itemDay < today;
-    });
+    return combinedItems
+      .filter(item => {
+        if (item.completed || !item.datetime) return false;
+        if (item.recurrence) return false; // Recurring items shouldn't show in overdue
+        
+        const itemDate = parseISO(item.datetime);
+        const itemDay = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+        return itemDay < today;
+      })
+      .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
   }, [combinedItems]);
 
   const noDateItems = useMemo(() => {
